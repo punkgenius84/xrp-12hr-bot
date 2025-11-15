@@ -19,7 +19,40 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run XRP Report
+      - name: Run XRP CoinGecko Report
         run: python xrp_report.py
+
+        def get_xrp_data(retries=5, delay=5):
+    for attempt in range(retries):
+        try:
+            url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=0.5&interval=minute"
+            data = requests.get(url, timeout=10).json()
+
+            if "prices" not in data or not data["prices"]:
+                print(f"❌ Attempt {attempt+1}: No price data, retrying...")
+                time.sleep(delay)
+                continue
+
+            df = pd.DataFrame(data["prices"], columns=["timestamp", "close"])
+            df["close"] = df["close"].astype(float)
+            df["high"] = df["close"]
+            df["low"] = df["close"]
+
+            df_vol = pd.DataFrame(data.get("total_volumes", []), columns=["timestamp", "volume"])
+            if not df_vol.empty:
+                df["volume"] = df_vol["volume"].astype(float)
+            else:
+                df["volume"] = 0
+
+            df = df.iloc[::15, :].reset_index(drop=True)
+            return df
+
+        except Exception as e:
+            print(f"❌ Attempt {attempt+1}: CoinGecko request failed: {e}")
+            time.sleep(delay)
+    return None
+
