@@ -2,8 +2,8 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    - cron: "0 */12 * * *"  # Runs every 12 hours
-  workflow_dispatch:        # Allows manual trigger
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
 
 jobs:
   xrp-report:
@@ -13,7 +13,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        persist-credentials: true  # Needed for git push
+        persist-credentials: true
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -27,7 +27,7 @@ jobs:
 
     - name: Run XRP Report
       env:
-        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}  # Pass secret to script
+        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
       run: python3 xrp_report.py
 
     - name: Commit updated CSV if changed
