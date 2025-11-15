@@ -1,10 +1,9 @@
 import requests
 import pandas as pd
-import numpy as np
-import time
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 
+# Discord webhook (hardcoded)
 WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
 
 def get_xrp_data():
@@ -85,14 +84,8 @@ def send_report(report):
 """
     requests.post(WEBHOOK_URL, json={"content": message})
 
-def run_bot():
-    while True:
-        df = get_xrp_data()
-        report = analyze(df)
-        send_report(report)
-
-        print("Sent 12h XRP report.")
-        time.sleep(43200)
-
-run_bot()
-
+if __name__ == "__main__":
+    df = get_xrp_data()
+    report = analyze(df)
+    send_report(report)
+    print("✅ XRP 12-hour report sent successfully.")
