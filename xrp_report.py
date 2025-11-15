@@ -1,10 +1,20 @@
+import requests
+import pandas as pd
+from ta.momentum import RSIIndicator
+from ta.trend import MACD
+from datetime import datetime, timedelta
+import os
+
+WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
+CSV_FILE = "xrp_history.csv"
+
+# ----------------------------
+# Step 1: Fetch 7-day hourly CSV
+# ----------------------------
 def fetch_7d_hourly_csv():
     """
     Fetch 7-day hourly XRP data from CoinGecko and save to CSV.
     """
-    import requests
-    import pandas as pd
-
     url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=7"
     data = requests.get(url, timeout=15).json()
 
@@ -18,61 +28,20 @@ def fetch_7d_hourly_csv():
     df_prices = pd.DataFrame(prices, columns=["timestamp", "close"])
     df_vol = pd.DataFrame(volumes, columns=["timestamp", "volume"])
 
-    # Convert timestamps
     df_prices["timestamp"] = pd.to_datetime(df_prices["timestamp"], unit="ms")
     df_vol["timestamp"] = pd.to_datetime(df_vol["timestamp"], unit="ms")
 
-    # Merge and add high/low
     df = pd.merge(df_prices, df_vol, on="timestamp", how="left")
     df["high"] = df["close"]
     df["low"] = df["close"]
 
-    # Save CSV
-    df.to_csv("xrp_history.csv", index=False)
+    df.to_csv(CSV_FILE, index=False)
     print("✅ 7-day hourly CSV saved as xrp_history.csv")
-import requests
-import pandas as pd
-from ta.momentum import RSIIndicator
-from ta.trend import MACD
-from datetime import datetime, timedelta
-import os
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
-CSV_FILE = "xrp_history.csv"
-
-def fetch_historical_data(days=7):
-    """
-    Fetch 7 days of historical XRP prices from CoinGecko at 15-min intervals.
-    """
-    url = f"https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days={days}&interval=minute"
-    try:
-        data = requests.get(url, timeout=15).json()
-        if "prices" not in data or not data["prices"]:
-            print("❌ Failed to fetch historical data")
-            return None
-
-        df = pd.DataFrame(data["prices"], columns=["timestamp", "close"])
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-        df["close"] = df["close"].astype(float)
-        df["high"] = df["close"]
-        df["low"] = df["close"]
-
-        df_vol = pd.DataFrame(data.get("total_volumes", []), columns=["timestamp", "volume"])
-        df_vol["timestamp"] = pd.to_datetime(df_vol["timestamp"], unit="ms")
-        df["volume"] = df_vol["volume"].astype(float) if not df_vol.empty else 0
-
-        # Sample every 15 minutes
-        df = df.iloc[::15].reset_index(drop=True)
-        return df
-
-    except Exception as e:
-        print("❌ Exception fetching historical data:", e)
-        return None
-
+# ----------------------------
+# Step 2: Fetch current price
+# ----------------------------
 def fetch_current_price():
-    """
-    Get current XRP price and 24h volume from CoinGecko simple price endpoint.
-    """
     url = "https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd&include_24hr_vol=true"
     try:
         data = requests.get(url, timeout=10).json()
@@ -84,28 +53,10 @@ def fetch_current_price():
         print("❌ Failed to fetch current price:", e)
         return None
 
-def ensure_history():
-    """
-    Ensure CSV exists with at least 7 days of historical data.
-    """
-    if not os.path.exists(CSV_FILE):
-        print("📁 CSV not found. Fetching historical data for first run...")
-        df_hist = fetch_historical_data(days=7)
-        if df_hist is not None:
-            df_hist.to_csv(CSV_FILE, index=False)
-            print("✅ Historical CSV created with 7 days of data.")
-        else:
-            # Create empty CSV as fallback
-            df_empty = pd.DataFrame(columns=["timestamp","close","volume","high","low"])
-            df_empty.to_csv(CSV_FILE, index=False)
-            print("⚠️ Could not fetch historical data. Created empty CSV.")
-    else:
-        print("📁 CSV already exists.")
-
+# ----------------------------
+# Step 3: Update history CSV
+# ----------------------------
 def update_history(current):
-    """
-    Save current price to CSV history and keep last 7 days.
-    """
     df_new = pd.DataFrame([current])
     df_hist = pd.read_csv(CSV_FILE, parse_dates=["timestamp"])
     df_hist = pd.concat([df_hist, df_new], ignore_index=True)
@@ -114,6 +65,9 @@ def update_history(current):
     df_hist = df_hist[df_hist["timestamp"] >= seven_days_ago]
     df_hist.to_csv(CSV_FILE, index=False)
 
+# ----------------------------
+# Step 4: Analyze indicators
+# ----------------------------
 def analyze(df):
     df["close"] = df["close"].astype(float)
     price = df["close"].iloc[-1]
@@ -154,6 +108,9 @@ def analyze(df):
         "bearish_prob": bearish_prob
     }
 
+# ----------------------------
+# Step 5: Send Discord report
+# ----------------------------
 def send_report(report):
     message = f"""
 **📊 XRP 12-Hour Report**
@@ -177,14 +134,16 @@ def send_report(report):
         requests.post(WEBHOOK_URL, json={"content": message})
     except Exception as e:
         print("❌ Failed to send Discord message:", e)
-if __name__ == "__main__":
-    import os
-    # Step 2: Check if CSV exists, fetch if missing
-    if not os.path.exists("xrp_history.csv"):
-        print("📁 xrp_history.csv not found — fetching 7-day hourly data...")
-        fetch_7d_hourly_csv()  # This is the function from Step 1
 
-    # Continue as normal
+# ----------------------------
+# Step 6: Main
+# ----------------------------
+if __name__ == "__main__":
+    # If CSV is missing, fetch 7-day hourly history
+    if not os.path.exists(CSV_FILE):
+        print("📁 xrp_history.csv not found — fetching 7-day hourly data...")
+        fetch_7d_hourly_csv()
+
     current = fetch_current_price()
     if current is None:
         print("❌ Could not fetch price. Skipping report.")
