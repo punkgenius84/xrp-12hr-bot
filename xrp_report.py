@@ -9,11 +9,15 @@ WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx
 CSV_FILE = "xrp_history.csv"
 
 # ----------------------------
-# Step 1: Fetch 7-day hourly CSV
+# Step 1: Fetch 30-day hourly CSV
 # ----------------------------
-def fetch_7d_hourly_csv():
-    url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=7"
-    data = requests.get(url, timeout=15).json()
+def fetch_30d_hourly_csv():
+    url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=30"
+    try:
+        data = requests.get(url, timeout=15).json()
+    except Exception as e:
+        print("❌ Failed to fetch historical data:", e)
+        return
 
     prices = data.get("prices", [])
     volumes = data.get("total_volumes", [])
@@ -33,7 +37,7 @@ def fetch_7d_hourly_csv():
     df["low"] = df["close"]
 
     df.to_csv(CSV_FILE, index=False)
-    print("✅ 7-day hourly CSV saved as xrp_history.csv")
+    print("✅ 30-day hourly CSV saved as xrp_history.csv")
 
 # ----------------------------
 # Step 2: Fetch current price
@@ -62,8 +66,8 @@ def update_history(current):
     df_hist["timestamp"] = pd.to_datetime(df_hist["timestamp"], errors="coerce", utc=True)
     df_hist = df_hist.dropna(subset=["timestamp"])
 
-    seven_days_ago = pd.Timestamp.utcnow() - pd.Timedelta(days=7)
-    df_hist = df_hist[df_hist["timestamp"] >= seven_days_ago]
+    thirty_days_ago = pd.Timestamp.utcnow() - pd.Timedelta(days=30)
+    df_hist = df_hist[df_hist["timestamp"] >= thirty_days_ago]
 
     df_hist.to_csv(CSV_FILE, index=False)
 
@@ -146,8 +150,8 @@ def send_report(report):
 # ----------------------------
 if __name__ == "__main__":
     if not os.path.exists(CSV_FILE):
-        print("📁 xrp_history.csv not found — fetching 7-day hourly data...")
-        fetch_7d_hourly_csv()
+        print("📁 xrp_history.csv not found — fetching 30-day hourly data...")
+        fetch_30d_hourly_csv()
 
     current = fetch_current_price()
     if current is None:
