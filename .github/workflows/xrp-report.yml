@@ -1,6 +1,5 @@
 name: XRP 12hr Report
 
-# Trigger: twice daily at 8:00 UTC and 20:00 UTC, or manual dispatch
 on:
   schedule:
     - cron: '0 8,20 * * *'
@@ -14,6 +13,8 @@ jobs:
       # 1️⃣ Checkout repository
       - name: Checkout Repo
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       # 2️⃣ Set up Python
       - name: Setup Python
@@ -30,3 +31,12 @@ jobs:
       # 4️⃣ Run XRP Report
       - name: Run XRP Report
         run: python xrp_report.py
+
+      # 5️⃣ Commit updated CSV back to GitHub
+      - name: Commit updated CSV
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git add xrp_history.csv
+          git diff --cached --quiet || git commit -m "Update xrp_history.csv"
+          git push
