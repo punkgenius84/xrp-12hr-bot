@@ -7,9 +7,6 @@ import time
 WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
 
 def get_xrp_data(retries=5, delay=5):
-    """
-    Fetch XRP price data from CoinGecko (last 12 hours, 15m intervals)
-    """
     for attempt in range(retries):
         try:
             url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=0.5&interval=minute"
@@ -31,7 +28,6 @@ def get_xrp_data(retries=5, delay=5):
             else:
                 df["volume"] = 0
 
-            # Take every 15 minutes to simulate your 15m interval
             df = df.iloc[::15, :].reset_index(drop=True)
             return df
 
