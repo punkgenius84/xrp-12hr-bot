@@ -7,9 +7,14 @@ import time
 WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
 
 def get_xrp_data(retries=5, delay=5):
+    """
+    Fetch XRP price data from CoinGecko (last 24 hours, 15m intervals)
+    Uses retries and fallback to last valid data to avoid skipped reports.
+    """
+    last_valid_df = None
     for attempt in range(retries):
         try:
-            url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=0.5&interval=minute"
+            url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=1&interval=minute"
             data = requests.get(url, timeout=10).json()
 
             if "prices" not in data or not data["prices"]:
@@ -23,17 +28,21 @@ def get_xrp_data(retries=5, delay=5):
             df["low"] = df["close"]
 
             df_vol = pd.DataFrame(data.get("total_volumes", []), columns=["timestamp", "volume"])
-            if not df_vol.empty:
-                df["volume"] = df_vol["volume"].astype(float)
-            else:
-                df["volume"] = 0
+            df["volume"] = df_vol["volume"].astype(float) if not df_vol.empty else 0
 
+            # Sample every 15 minutes for 12-hour report
             df = df.iloc[::15, :].reset_index(drop=True)
+            last_valid_df = df
             return df
 
         except Exception as e:
             print(f"❌ Attempt {attempt+1}: CoinGecko request failed: {e}")
             time.sleep(delay)
+
+    if last_valid_df is not None:
+        print("⚠️ Using last valid data despite API issues.")
+        return last_valid_df
+
     return None
 
 def analyze(df):
