@@ -1,38 +1,26 @@
-name: XRP 12-Hour Report
+name: XRP 12hr Report
 
 on:
   schedule:
-    - cron: "0 13 * * *"  # 8 AM EST Florida
-    - cron: "0 1 * * *"   # 8 PM EST Florida
-  workflow_dispatch:       # allows manual run
+    - cron: '0 8,20 * * *'  # 8 AM and 8 PM UTC
+  workflow_dispatch:
 
 jobs:
-  send-report:
+  run-report:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Repo
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: 3.11
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Ensure xrp_history.csv exists
-        run: |
-          if [ ! -f xrp_history.csv ]; then
-            echo "timestamp,close,volume,high,low" > xrp_history.csv
-            echo "CSV created for first run."
-          else
-            echo "CSV already exists, continuing..."
-          fi
+          python -m pip install --upgrade pip
+          pip install pandas requests ta
 
       - name: Run XRP Report
-        run: |
-          python xrp_report.py
+        run: python xrp_report.py
