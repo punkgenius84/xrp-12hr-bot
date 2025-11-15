@@ -1,21 +1,11 @@
-name: XRP 12hr Report
-on:
-  schedule:
-    - cron: "0 */12 * * *" # every 12 hours
-jobs:
-  send-report:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Run script
-        run: import requests
+import requests
 import pandas as pd
-import numpy as np
-import time
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
+import os
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
+# Get webhook from GitHub Secrets
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 def get_xrp_data():
     url = "https://api.binance.com/api/v3/klines?symbol=XRPUSDT&interval=15m&limit=600"
@@ -95,14 +85,9 @@ def send_report(report):
 """
     requests.post(WEBHOOK_URL, json={"content": message})
 
-def run_bot():
-    while True:
-        df = get_xrp_data()
-        report = analyze(df)
-        send_report(report)
-
-        print("Sent 12h XRP report.")
-        time.sleep(43200)
-
-run_bot()
-
+# Single-run execution
+if __name__ == "__main__":
+    df = get_xrp_data()
+    report = analyze(df)
+    send_report(report)
+    print("XRP 12-hour report sent successfully.")
