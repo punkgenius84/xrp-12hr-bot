@@ -4,7 +4,6 @@ import numpy as np
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime, timedelta
-import time
 
 # ----------------------
 # CONFIG
@@ -16,7 +15,7 @@ WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx
 # FETCH DATA
 # ----------------------
 def fetch_30d_hourly():
-    """Fetch 30 days of hourly XRP prices and volumes from CoinGecko"""
+    """Fetch 30 days of hourly XRP data from CoinGecko"""
     url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart"
     params = {"vs_currency": "usd", "days": "30"}
     
@@ -36,11 +35,12 @@ def fetch_30d_hourly():
     df_prices = pd.DataFrame(prices, columns=["timestamp", "close"])
     df_vol = pd.DataFrame(volumes, columns=["timestamp", "volume"])
 
-    # Convert ms to datetime
     df_prices["timestamp"] = pd.to_datetime(df_prices["timestamp"], unit="ms", errors="coerce")
     df_vol["timestamp"] = pd.to_datetime(df_vol["timestamp"], unit="ms", errors="coerce")
 
     df = pd.merge(df_prices, df_vol, on="timestamp", how="left")
+
+    # placeholder high/low until tracking builds up internally
     df["high"] = df["close"]
     df["low"] = df["close"]
 
@@ -50,18 +50,16 @@ def fetch_30d_hourly():
 # UPDATE HISTORY CSV
 # ----------------------
 def update_history(current_row):
-    """Append latest data to CSV and keep last 30 days"""
+    """Append latest data to CSV and keep last 30 days."""
     try:
         df_hist = pd.read_csv(CSV_FILE)
         df_hist["timestamp"] = pd.to_datetime(df_hist["timestamp"], errors="coerce")
     except FileNotFoundError:
         df_hist = pd.DataFrame(columns=["timestamp", "close", "high", "low", "volume"])
 
-    # Append only if new timestamp
     if current_row["timestamp"] not in df_hist["timestamp"].values:
         df_hist = pd.concat([df_hist, pd.DataFrame([current_row])], ignore_index=True)
 
-    # Keep last 30 days
     cutoff = datetime.utcnow() - timedelta(days=30)
     df_hist = df_hist[df_hist["timestamp"] >= cutoff]
 
@@ -72,7 +70,7 @@ def update_history(current_row):
 # ANALYZE
 # ----------------------
 def analyze(df):
-    if df.empty or len(df) < 14:  # RSI requires at least 14 points
+    if df.empty or len(df) < 14:
         return {
             "price": df["close"].iloc[-1] if not df.empty else 0,
             "rsi": "N/A",
@@ -108,6 +106,7 @@ def analyze(df):
 
     total = bullish_prob + bearish_prob
     total = total if total != 0 else 1
+
     bullish_prob = round((bullish_prob / total) * 100, 2)
     bearish_prob = round((bearish_prob / total) * 100, 2)
 
@@ -130,6 +129,13 @@ def send_report(report):
 **📊 XRP 12-Hour Report**
 
 Price: ${report['price']}
+
+**12h High:** ${report['high_12h']}
+**12h Low:** ${report['low_12h']}
+
+**24h High:** ${report['high_24h']}
+**24h Low:** ${report['low_24h']}
+
 RSI: {report['rsi']}
 MACD: {report['macd_line']} (signal {report['macd_signal']})
 MA50: {report['ma50']}
@@ -151,7 +157,7 @@ Alerts:
         print(f"❌ Failed to send Discord report: {e}")
 
 # ----------------------
-# MAIN LOOP (for GitHub Actions, single run)
+# MAIN
 # ----------------------
 def main():
     df_hist = fetch_30d_hourly()
@@ -159,11 +165,30 @@ def main():
         print("⚠️ Skipping report: Failed to fetch data.")
         return
 
-    # Use last row as "current"
     current = df_hist.iloc[-1].to_dict()
     df_hist = update_history(current)
 
+    # -----------------------------
+    # 12H & 24H High/Low Calculation
+    # -----------------------------
+    now = df_hist["timestamp"].max()
+
+    df_12h = df_hist[df_hist["timestamp"] >= now - timedelta(hours=12)]
+    df_24h = df_hist[df_hist["timestamp"] >= now - timedelta(hours=24)]
+
+    high_12h = round(df_12h["close"].max(), 4)
+    low_12h = round(df_12h["close"].min(), 4)
+
+    high_24h = round(df_24h["close"].max(), 4)
+    low_24h = round(df_24h["close"].min(), 4)
+
     report = analyze(df_hist)
+
+    report["high_12h"] = high_12h
+    report["low_12h"] = low_12h
+    report["high_24h"] = high_24h
+    report["low_24h"] = low_24h
+
     send_report(report)
     print("✅ XRP report completed")
 
