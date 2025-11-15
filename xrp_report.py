@@ -2,56 +2,52 @@ import requests
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
-import time
+from datetime import datetime
+import os
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
+CSV_FILE = "xrp_history.csv"
 
-def get_xrp_data(retries=5, delay=5):
+def fetch_current_price():
     """
-    Fetch XRP price data from CoinGecko (last 24 hours, 15m intervals)
-    Uses retries and fallback to last valid data to avoid skipped reports.
+    Get current XRP price and 24h volume from CoinGecko simple price endpoint.
     """
-    last_valid_df = None
-    for attempt in range(retries):
-        try:
-            url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=1&interval=minute"
-            data = requests.get(url, timeout=10).json()
+    url = "https://api.coingecko.com/api/v3/simple/price?ids=ripple&vs_currencies=usd&include_24hr_vol=true"
+    try:
+        data = requests.get(url, timeout=10).json()
+        price = float(data["ripple"]["usd"])
+        volume = float(data["ripple"]["usd_24h_vol"])
+        timestamp = datetime.utcnow()
+        return {"timestamp": timestamp, "close": price, "volume": volume, "high": price, "low": price}
+    except Exception as e:
+        print("❌ Failed to fetch current price:", e)
+        return None
 
-            if "prices" not in data or not data["prices"]:
-                print(f"❌ Attempt {attempt+1}: No price data, retrying...")
-                time.sleep(delay)
-                continue
-
-            df = pd.DataFrame(data["prices"], columns=["timestamp", "close"])
-            df["close"] = df["close"].astype(float)
-            df["high"] = df["close"]
-            df["low"] = df["close"]
-
-            df_vol = pd.DataFrame(data.get("total_volumes", []), columns=["timestamp", "volume"])
-            df["volume"] = df_vol["volume"].astype(float) if not df_vol.empty else 0
-
-            # Sample every 15 minutes for 12-hour report
-            df = df.iloc[::15, :].reset_index(drop=True)
-            last_valid_df = df
-            return df
-
-        except Exception as e:
-            print(f"❌ Attempt {attempt+1}: CoinGecko request failed: {e}")
-            time.sleep(delay)
-
-    if last_valid_df is not None:
-        print("⚠️ Using last valid data despite API issues.")
-        return last_valid_df
-
-    return None
+def update_history(current):
+    """
+    Save current price to CSV history. Create CSV if it doesn't exist.
+    """
+    df_new = pd.DataFrame([current])
+    if os.path.exists(CSV_FILE):
+        df_hist = pd.read_csv(CSV_FILE, parse_dates=["timestamp"])
+        df_hist = pd.concat([df_hist, df_new], ignore_index=True)
+        # Keep last 7 days of data (~672 rows for 15min intervals)
+        df_hist = df_hist.tail(672)
+        df_hist.to_csv(CSV_FILE, index=False)
+    else:
+        df_new.to_csv(CSV_FILE, index=False)
 
 def analyze(df):
+    """
+    Compute RSI, MACD, moving averages, and probabilities.
+    """
+    df["close"] = df["close"].astype(float)
     price = df["close"].iloc[-1]
     rsi = RSIIndicator(df["close"], window=14).rsi().iloc[-1]
     macd_line = MACD(df["close"]).macd().iloc[-1]
     macd_signal = MACD(df["close"]).macd_signal().iloc[-1]
-    ma50 = df["close"].rolling(50).mean().iloc[-1]
-    ma200 = df["close"].rolling(200).mean().iloc[-1]
+    ma50 = df["close"].rolling(50).mean().iloc[-1] if len(df) >= 50 else price
+    ma200 = df["close"].rolling(200).mean().iloc[-1] if len(df) >= 200 else price
 
     bullish_prob = 0
     bearish_prob = 0
@@ -82,11 +78,11 @@ def analyze(df):
         "bearish_prob": bearish_prob
     }
 
-def send_report(report, skipped=False):
-    if skipped:
-        message = "⚠️ XRP report skipped: CoinGecko API returned invalid data."
-    else:
-        message = f"""
+def send_report(report):
+    """
+    Send formatted report to Discord webhook.
+    """
+    message = f"""
 **📊 XRP 12-Hour Report**
 
 **Price:** ${report['price']}
@@ -110,11 +106,12 @@ def send_report(report, skipped=False):
         print("❌ Failed to send Discord message:", e)
 
 if __name__ == "__main__":
-    df = get_xrp_data()
-    if df is not None:
-        report = analyze(df)
-        send_report(report)
-        print("✅ XRP 12-hour report sent successfully via CoinGecko.")
+    current = fetch_current_price()
+    if current is None:
+        print("❌ Could not fetch price. Skipping report.")
     else:
-        send_report(None, skipped=True)
-        print("⚠️ XRP report skipped due to CoinGecko API error.")
+        update_history(current)
+        df_hist = pd.read_csv(CSV_FILE, parse_dates=["timestamp"])
+        report = analyze(df_hist)
+        send_report(report)
+        print("✅ XRP 12-hour report sent successfully.")
