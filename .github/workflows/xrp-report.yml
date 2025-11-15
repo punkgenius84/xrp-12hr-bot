@@ -1,16 +1,16 @@
-name: XRP 12hr Report
+name: XRP 12-Hour Report Bot
 
 on:
   schedule:
-    - cron: "0 */12 * * *"
-  workflow_dispatch:
+    - cron: "0 */12 * * *"   # Every 12 hours
+  workflow_dispatch:         # Allows manual run
 
 jobs:
-  send-report:
+  xrp-report:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -20,9 +20,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests
+          pip install requests pandas numpy
 
-      - name: Run XRP Report Script
+      - name: Run XRP Report
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
