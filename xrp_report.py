@@ -58,12 +58,23 @@ def fetch_current_price():
 # ----------------------------
 def update_history(current):
     df_new = pd.DataFrame([current])
+
+    # Read CSV and parse timestamp as datetime
     df_hist = pd.read_csv(CSV_FILE, parse_dates=["timestamp"])
+
+    # Merge new data
     df_hist = pd.concat([df_hist, df_new], ignore_index=True)
-    # Keep last 7 days
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+
+    # Ensure timestamp column is datetime
+    df_hist["timestamp"] = pd.to_datetime(df_hist["timestamp"])
+
+    # Keep only last 7 days
+    seven_days_ago = pd.Timestamp.utcnow() - pd.Timedelta(days=7)
     df_hist = df_hist[df_hist["timestamp"] >= seven_days_ago]
+
+    # Save CSV
     df_hist.to_csv(CSV_FILE, index=False)
+
 
 # ----------------------------
 # Step 4: Analyze indicators
