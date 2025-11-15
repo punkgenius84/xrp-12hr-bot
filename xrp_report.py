@@ -2,11 +2,40 @@ import requests
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
 CSV_FILE = "xrp_history.csv"
+
+def fetch_historical_data(days=7):
+    """
+    Fetch 7 days of historical XRP prices from CoinGecko at 15-min intervals.
+    """
+    url = f"https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days={days}&interval=minute"
+    try:
+        data = requests.get(url, timeout=15).json()
+        if "prices" not in data or not data["prices"]:
+            print("❌ Failed to fetch historical data")
+            return None
+
+        df = pd.DataFrame(data["prices"], columns=["timestamp", "close"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df["close"] = df["close"].astype(float)
+        df["high"] = df["close"]
+        df["low"] = df["close"]
+
+        df_vol = pd.DataFrame(data.get("total_volumes", []), columns=["timestamp", "volume"])
+        df_vol["timestamp"] = pd.to_datetime(df_vol["timestamp"], unit="ms")
+        df["volume"] = df_vol["volume"].astype(float) if not df_vol.empty else 0
+
+        # Sample every 15 minutes
+        df = df.iloc[::15].reset_index(drop=True)
+        return df
+
+    except Exception as e:
+        print("❌ Exception fetching historical data:", e)
+        return None
 
 def fetch_current_price():
     """
@@ -23,29 +52,44 @@ def fetch_current_price():
         print("❌ Failed to fetch current price:", e)
         return None
 
+def ensure_history():
+    """
+    Ensure CSV exists with at least 7 days of historical data.
+    """
+    if not os.path.exists(CSV_FILE):
+        print("📁 CSV not found. Fetching historical data for first run...")
+        df_hist = fetch_historical_data(days=7)
+        if df_hist is not None:
+            df_hist.to_csv(CSV_FILE, index=False)
+            print("✅ Historical CSV created with 7 days of data.")
+        else:
+            # Create empty CSV as fallback
+            df_empty = pd.DataFrame(columns=["timestamp","close","volume","high","low"])
+            df_empty.to_csv(CSV_FILE, index=False)
+            print("⚠️ Could not fetch historical data. Created empty CSV.")
+    else:
+        print("📁 CSV already exists.")
+
 def update_history(current):
     """
-    Save current price to CSV history. Create CSV if it doesn't exist.
+    Save current price to CSV history and keep last 7 days.
     """
     df_new = pd.DataFrame([current])
-    if os.path.exists(CSV_FILE):
-        df_hist = pd.read_csv(CSV_FILE, parse_dates=["timestamp"])
-        df_hist = pd.concat([df_hist, df_new], ignore_index=True)
-        # Keep last 7 days of data (~672 rows for 15min intervals)
-        df_hist = df_hist.tail(672)
-        df_hist.to_csv(CSV_FILE, index=False)
-    else:
-        df_new.to_csv(CSV_FILE, index=False)
+    df_hist = pd.read_csv(CSV_FILE, parse_dates=["timestamp"])
+    df_hist = pd.concat([df_hist, df_new], ignore_index=True)
+    # Keep last 7 days
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    df_hist = df_hist[df_hist["timestamp"] >= seven_days_ago]
+    df_hist.to_csv(CSV_FILE, index=False)
 
 def analyze(df):
-    """
-    Compute RSI, MACD, moving averages, and probabilities.
-    """
     df["close"] = df["close"].astype(float)
     price = df["close"].iloc[-1]
+
     rsi = RSIIndicator(df["close"], window=14).rsi().iloc[-1]
     macd_line = MACD(df["close"]).macd().iloc[-1]
     macd_signal = MACD(df["close"]).macd_signal().iloc[-1]
+
     ma50 = df["close"].rolling(50).mean().iloc[-1] if len(df) >= 50 else price
     ma200 = df["close"].rolling(200).mean().iloc[-1] if len(df) >= 200 else price
 
@@ -79,26 +123,23 @@ def analyze(df):
     }
 
 def send_report(report):
-    """
-    Send formatted report to Discord webhook.
-    """
     message = f"""
 **📊 XRP 12-Hour Report**
 
-**Price:** ${report['price']}
-**RSI:** {report['rsi']}
-**MACD:** {report['macd_line']} (signal {report['macd_signal']})
-**MA50:** {report['ma50']}
-**MA200:** {report['ma200']}
+**Price:** ${report['price']:.2f}  
+**RSI:** {report['rsi'] if not pd.isna(report['rsi']) else 'N/A'}  
+**MACD:** {report['macd_line'] if not pd.isna(report['macd_line']) else 'N/A'} (signal {report['macd_signal'] if not pd.isna(report['macd_signal']) else 'N/A'})  
+**MA50:** {report['ma50']:.4f}  
+**MA200:** {report['ma200']:.4f}  
 
-**📈 Bullish Probability:** {report['bullish_prob']}%
-**📉 Bearish Probability:** {report['bearish_prob']}%
+**📈 Bullish Probability:** {report['bullish_prob']}%  
+**📉 Bearish Probability:** {report['bearish_prob']}%  
 
 **Alerts:**  
 - MACD crossover monitored  
 - RSI divergence monitored  
 - Volume spikes monitored  
-- Pattern detection enabled  
+- Pattern detection enabled
 """
     try:
         requests.post(WEBHOOK_URL, json={"content": message})
@@ -106,6 +147,7 @@ def send_report(report):
         print("❌ Failed to send Discord message:", e)
 
 if __name__ == "__main__":
+    ensure_history()
     current = fetch_current_price()
     if current is None:
         print("❌ Could not fetch price. Skipping report.")
