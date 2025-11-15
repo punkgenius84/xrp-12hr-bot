@@ -8,7 +8,18 @@ WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx
 
 def get_xrp_data():
     url = "https://api.binance.com/api/v3/klines?symbol=XRPUSDT&interval=15m&limit=600"
-    data = requests.get(url).json()
+    response = requests.get(url)
+    
+    try:
+        data = response.json()
+    except ValueError:
+        print("❌ Failed to parse JSON from Binance API")
+        return None
+
+    # Check if data is in expected format
+    if not data or not isinstance(data, list) or not all(isinstance(c, list) and len(c) > 4 for c in data):
+        print("❌ Binance API returned unexpected data:", data)
+        return None
 
     closes = [float(c[4]) for c in data]
     highs = [float(c[2]) for c in data]
@@ -23,6 +34,7 @@ def get_xrp_data():
     })
 
     return df
+
 
 def analyze(df):
     price = df["close"].iloc[-1]
