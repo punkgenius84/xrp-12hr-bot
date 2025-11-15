@@ -44,6 +44,9 @@ jobs:
     - name: Debug High/Low
       run: |
         python3 - <<EOF
+    - name: Debug High/Low
+      run: |
+        python3 - <<EOF
 import pandas as pd
 df = pd.read_csv("xrp_history.csv")
 last_row = df.iloc[-1]
