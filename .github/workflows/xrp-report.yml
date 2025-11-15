@@ -2,8 +2,9 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    - cron: "0 */12 * * *"  # every 12 hours UTC
-  workflow_dispatch:        # allows manual run
+    - cron: "0 13 * * *"  # 8 AM EST
+    - cron: "0 1 * * *"   # 8 PM EST
+  workflow_dispatch:       # allows manual run
 
 jobs:
   send-report:
