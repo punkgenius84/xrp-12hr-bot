@@ -1,3 +1,35 @@
+def fetch_7d_hourly_csv():
+    """
+    Fetch 7-day hourly XRP data from CoinGecko and save to CSV.
+    """
+    import requests
+    import pandas as pd
+
+    url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=7"
+    data = requests.get(url, timeout=15).json()
+
+    prices = data.get("prices", [])
+    volumes = data.get("total_volumes", [])
+
+    if not prices:
+        print("❌ No price data returned from CoinGecko")
+        return
+
+    df_prices = pd.DataFrame(prices, columns=["timestamp", "close"])
+    df_vol = pd.DataFrame(volumes, columns=["timestamp", "volume"])
+
+    # Convert timestamps
+    df_prices["timestamp"] = pd.to_datetime(df_prices["timestamp"], unit="ms")
+    df_vol["timestamp"] = pd.to_datetime(df_vol["timestamp"], unit="ms")
+
+    # Merge and add high/low
+    df = pd.merge(df_prices, df_vol, on="timestamp", how="left")
+    df["high"] = df["close"]
+    df["low"] = df["close"]
+
+    # Save CSV
+    df.to_csv("xrp_history.csv", index=False)
+    print("✅ 7-day hourly CSV saved as xrp_history.csv")
 import requests
 import pandas as pd
 from ta.momentum import RSIIndicator
