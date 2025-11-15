@@ -6,33 +6,39 @@ import time
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
 
-def get_xrp_data():
+def get_xrp_data(retries=5, delay=5):
     """
     Fetch XRP price data from CoinGecko (last 12 hours, 15m intervals)
     """
-    url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=0.5&interval=minute"
-    try:
-        data = requests.get(url, timeout=10).json()
-    except Exception as e:
-        print("❌ CoinGecko request failed:", e)
-        return None
+    for attempt in range(retries):
+        try:
+            url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=0.5&interval=minute"
+            data = requests.get(url, timeout=10).json()
 
-    if "prices" not in data:
-        print("❌ CoinGecko API returned unexpected data:", data)
-        return None
+            if "prices" not in data or not data["prices"]:
+                print(f"❌ Attempt {attempt+1}: No price data, retrying...")
+                time.sleep(delay)
+                continue
 
-    # Extract close, high, low, volume (approximated from minute data)
-    df = pd.DataFrame(data["prices"], columns=["timestamp", "close"])
-    df["close"] = df["close"].astype(float)
-    df["high"] = df["close"]  # CoinGecko does not provide high/low for intervals
-    df["low"] = df["close"]
-    # Volume approximation
-    df_vol = pd.DataFrame(data.get("total_volumes", []), columns=["timestamp", "volume"])
-    df["volume"] = df_vol["volume"].astype(float)
+            df = pd.DataFrame(data["prices"], columns=["timestamp", "close"])
+            df["close"] = df["close"].astype(float)
+            df["high"] = df["close"]
+            df["low"] = df["close"]
 
-    # Sample every 15 minutes
-    df = df.iloc[::15, :].reset_index(drop=True)
-    return df
+            df_vol = pd.DataFrame(data.get("total_volumes", []), columns=["timestamp", "volume"])
+            if not df_vol.empty:
+                df["volume"] = df_vol["volume"].astype(float)
+            else:
+                df["volume"] = 0
+
+            # Take every 15 minutes to simulate your 15m interval
+            df = df.iloc[::15, :].reset_index(drop=True)
+            return df
+
+        except Exception as e:
+            print(f"❌ Attempt {attempt+1}: CoinGecko request failed: {e}")
+            time.sleep(delay)
+    return None
 
 def analyze(df):
     price = df["close"].iloc[-1]
@@ -93,7 +99,10 @@ def send_report(report, skipped=False):
 - Volume spikes monitored  
 - Pattern detection enabled  
 """
-    requests.post(WEBHOOK_URL, json={"content": message})
+    try:
+        requests.post(WEBHOOK_URL, json={"content": message})
+    except Exception as e:
+        print("❌ Failed to send Discord message:", e)
 
 if __name__ == "__main__":
     df = get_xrp_data()
