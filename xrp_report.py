@@ -177,9 +177,14 @@ def send_report(report):
         requests.post(WEBHOOK_URL, json={"content": message})
     except Exception as e:
         print("❌ Failed to send Discord message:", e)
-
 if __name__ == "__main__":
-    ensure_history()
+    import os
+    # Step 2: Check if CSV exists, fetch if missing
+    if not os.path.exists("xrp_history.csv"):
+        print("📁 xrp_history.csv not found — fetching 7-day hourly data...")
+        fetch_7d_hourly_csv()  # This is the function from Step 1
+
+    # Continue as normal
     current = fetch_current_price()
     if current is None:
         print("❌ Could not fetch price. Skipping report.")
