@@ -6,41 +6,33 @@ import time
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"
 
-def get_xrp_data(retries=3, delay=5):
-    for attempt in range(retries):
-        try:
-            url = "https://api.binance.com/api/v3/klines?symbol=XRPUSDT&interval=15m&limit=600"
-            response = requests.get(url, timeout=10)
-            data = response.json()
-            
-            # Check for error message
-            if isinstance(data, dict) and data.get("msg"):
-                print("❌ Binance API blocked request:", data.get("msg"))
-                return None
+def get_xrp_data():
+    """
+    Fetch XRP price data from CoinGecko (last 12 hours, 15m intervals)
+    """
+    url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=0.5&interval=minute"
+    try:
+        data = requests.get(url, timeout=10).json()
+    except Exception as e:
+        print("❌ CoinGecko request failed:", e)
+        return None
 
-            # Validate expected format
-            if not data or not all(isinstance(c, list) and len(c) > 4 for c in data):
-                print("❌ Unexpected Binance data, retrying...")
-                time.sleep(delay)
-                continue
+    if "prices" not in data:
+        print("❌ CoinGecko API returned unexpected data:", data)
+        return None
 
-            closes = [float(c[4]) for c in data]
-            highs = [float(c[2]) for c in data]
-            lows  = [float(c[3]) for c in data]
-            volume = [float(c[5]) for c in data]
+    # Extract close, high, low, volume (approximated from minute data)
+    df = pd.DataFrame(data["prices"], columns=["timestamp", "close"])
+    df["close"] = df["close"].astype(float)
+    df["high"] = df["close"]  # CoinGecko does not provide high/low for intervals
+    df["low"] = df["close"]
+    # Volume approximation
+    df_vol = pd.DataFrame(data.get("total_volumes", []), columns=["timestamp", "volume"])
+    df["volume"] = df_vol["volume"].astype(float)
 
-            df = pd.DataFrame({
-                "close": closes,
-                "high": highs,
-                "low": lows,
-                "volume": volume
-            })
-            return df
-
-        except Exception as e:
-            print("❌ Request failed:", e)
-            time.sleep(delay)
-    return None
+    # Sample every 15 minutes
+    df = df.iloc[::15, :].reset_index(drop=True)
+    return df
 
 def analyze(df):
     price = df["close"].iloc[-1]
@@ -81,7 +73,7 @@ def analyze(df):
 
 def send_report(report, skipped=False):
     if skipped:
-        message = "⚠️ XRP report skipped: Binance API blocked request or returned invalid data."
+        message = "⚠️ XRP report skipped: CoinGecko API returned invalid data."
     else:
         message = f"""
 **📊 XRP 12-Hour Report**
@@ -108,6 +100,7 @@ if __name__ == "__main__":
     if df is not None:
         report = analyze(df)
         send_report(report)
-        print("✅ XRP 12-hour report sent successfully.")
+        print("✅ XRP 12-hour report sent successfully via CoinGecko.")
     else:
         send_report(None, skipped=True)
+        print("⚠️ XRP report skipped due to CoinGecko API error.")
