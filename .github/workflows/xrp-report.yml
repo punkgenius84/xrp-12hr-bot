@@ -2,8 +2,8 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    - cron: "0 13 * * *"  # 8 AM EST
-    - cron: "0 1 * * *"   # 8 PM EST
+    - cron: "0 13 * * *"  # 8 AM EST Florida
+    - cron: "0 1 * * *"   # 8 PM EST Florida
   workflow_dispatch:       # allows manual run
 
 jobs:
@@ -24,6 +24,15 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run XRP CoinGecko Report
+      - name: Ensure xrp_history.csv exists
+        run: |
+          if [ ! -f xrp_history.csv ]; then
+            echo "timestamp,close,volume,high,low" > xrp_history.csv
+            echo "CSV created for first run."
+          else
+            echo "CSV already exists, continuing..."
+          fi
+
+      - name: Run XRP Report
         run: |
           python xrp_report.py
