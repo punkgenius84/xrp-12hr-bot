@@ -1,4 +1,3 @@
-import os
 import requests
 import pandas as pd
 import numpy as np
@@ -10,9 +9,7 @@ from datetime import datetime, timedelta
 # CONFIG
 # ----------------------
 CSV_FILE = "xrp_history.csv"
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Read from environment (GitHub secret)
-if not WEBHOOK_URL:
-    print("❌ ERROR: WEBHOOK_URL not set!")
+WEBHOOK_URL = "https://discord.com/api/webhooks/your_webhook_here"  # Replace with your actual webhook
 
 # ----------------------
 # FETCH DATA
@@ -97,7 +94,7 @@ def analyze(df):
     ma200 = df["close"].rolling(200).mean().iloc[-1] if len(df) >= 200 else df["close"].mean()
 
     # ----------------------
-    # Realistic Bullish/Bearish Probability
+    # Base Bullish/Bearish Probability
     # ----------------------
     bullish_prob = 50
     bearish_prob = 50
@@ -133,8 +130,8 @@ def analyze(df):
     return {
         "price": round(price, 4),
         "rsi": round(rsi, 2) if isinstance(rsi, (float, int)) else "N/A",
-        "macd_line": round(macd_line, 4) if isinstance(macd_line, (float, int)) else "N/A",
-        "macd_signal": round(macd_signal, 4) if isinstance(macd_signal, (float, int)) else "N/A",
+        "macd_line": round(macd_line, 4),
+        "macd_signal": round(macd_signal, 4),
         "ma50": round(ma50, 4),
         "ma200": round(ma200, 4),
         "bullish_prob": round(bullish_prob, 2),
@@ -150,18 +147,38 @@ def send_report(report, df_hist):
 
     trend = "Bullish" if report["bullish_prob"] > report["bearish_prob"] else "Bearish"
 
-    alerts = []
-    if report["price"] < 2.25:
-        alerts.append("🟥 XRP below $2.25 — danger level")
-    elif report["price"] < 2.28:
-        alerts.append("⚠ XRP retraced near $2.28 — caution")
+    # --- Dynamic thresholds ---
+    low_12h = last_12h.min()
+    high_12h = last_12h.max()
 
+    danger_level = low_12h * 0.985        # 1.5% below 12H low
+    caution_level = low_12h * 0.99        # 1% below 12H low
+    bullish_caution = high_12h * 1.01     # 1% above 12H high
+    bullish_breakout = high_12h * 1.015   # 1.5% above 12H high
+
+    alerts = []
+
+    # --- Bearish alerts ---
+    if report["price"] < danger_level:
+        alerts.append(f"🟥 XRP below dynamic danger level ${danger_level:.4f}")
+        report["bearish_prob"] = max(report["bearish_prob"], 90)
+    elif report["price"] < caution_level:
+        alerts.append(f"⚠ XRP near dynamic caution level ${caution_level:.4f}")
+        report["bearish_prob"] = max(report["bearish_prob"], 70)
+
+    # --- Bullish alerts ---
+    if report["price"] > bullish_breakout:
+        alerts.append(f"🟢 XRP above dynamic breakout level ${bullish_breakout:.4f}")
+        report["bullish_prob"] = max(report["bullish_prob"], 90)
+    elif report["price"] > bullish_caution:
+        alerts.append(f"🔵 XRP near dynamic bullish caution level ${bullish_caution:.4f}")
+        report["bullish_prob"] = max(report["bullish_prob"], 70)
+
+    # --- MACD alerts ---
     if report["macd_line"] < report["macd_signal"]:
         alerts.append("🔴 MACD Bearish Crossover")
     elif report["macd_line"] > report["macd_signal"]:
         alerts.append("🔵 MACD Bullish Crossover")
-
-    alerts_text = "\n• ".join(alerts) if alerts else "None"
 
     message = f"""
 **XRP 12-Hour Report**
@@ -185,8 +202,8 @@ def send_report(report, df_hist):
 🔍 Trend: {trend}
 
 ⚡ Alerts
-• {alerts_text}
-"""
+• " + "\n• ".join(alerts)
+    """
 
     try:
         requests.post(WEBHOOK_URL, json={"content": message}, timeout=10)
