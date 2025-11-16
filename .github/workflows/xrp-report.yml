@@ -2,8 +2,8 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    - cron: "0 */12 * * *"  # Runs every 12 hours
-  workflow_dispatch:        # Allows manual trigger
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
 
 jobs:
   xrp-report:
@@ -13,7 +13,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        persist-credentials: true  # Needed for git push
+        persist-credentials: true
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -27,7 +27,7 @@ jobs:
 
     - name: Run XRP Report
       env:
-        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}  # Pass Discord webhook secret
+        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
       run: python3 xrp_report.py
 
     - name: Commit updated CSV if changed
@@ -44,13 +44,14 @@ jobs:
     - name: Debug High/Low
       run: |
         python3 - <<EOF
-        import pandas as pd
-        df = pd.read_csv("xrp_history.csv"))
-        last_row = df.iloc[-1]
-    
-        print("✅ Last recorded price:", last_row["close"])
-        print("✅ 12H High:", df["close"].tail(12).max())
-        print("✅ 12H Low:", df["close"].tail(12).min())
-        print("✅ 24H High:", df["close"].tail(24).max())
-        print("✅ 24H Low:", df["close"].tail(24).min())
-        EOF
+import pandas as pd
+
+df = pd.read_csv("xrp_history.csv")
+last_row = df.iloc[-1]
+
+print("✅ Last recorded price:", last_row["close"])
+print("✅ 12H High:", df["close"].tail(12).max())
+print("✅ 12H Low:", df["close"].tail(12).min())
+print("✅ 24H High:", df["close"].tail(24).max())
+print("✅ 24H Low:", df["close"].tail(24).min())
+EOF
