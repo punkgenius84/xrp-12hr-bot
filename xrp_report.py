@@ -1,22 +1,16 @@
+import os
 import requests
 import pandas as pd
 import numpy as np
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime, timedelta
-import os
-import sys
 
 # ----------------------
 # CONFIG
 # ----------------------
 CSV_FILE = "xrp_history.csv"
-
-# Grab webhook from environment
-WEBHOOK = os.getenv("WEBHOOK_URL")
-if not WEBHOOK:
-    print("❌ ERROR: WEBHOOK_URL secret not found! Add it in Settings → Secrets → Actions.")
-    sys.exit(1)
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Pulls from GitHub Actions secret
 
 # ----------------------
 # FETCH DATA
@@ -63,11 +57,9 @@ def update_history(current_row):
     except FileNotFoundError:
         df_hist = pd.DataFrame(columns=["timestamp", "close", "high", "low", "volume"])
 
-    # Append only if new timestamp
     if current_row["timestamp"] not in df_hist["timestamp"].values:
         df_hist = pd.concat([df_hist, pd.DataFrame([current_row])], ignore_index=True)
 
-    # Keep last 30 days
     cutoff = datetime.utcnow() - timedelta(days=30)
     df_hist = df_hist[df_hist["timestamp"] >= cutoff]
 
@@ -78,7 +70,7 @@ def update_history(current_row):
 # ANALYZE
 # ----------------------
 def analyze(df):
-    if df.empty or len(df) < 14:  # RSI requires at least 14 points
+    if df.empty or len(df) < 14:
         return {
             "price": df["close"].iloc[-1] if not df.empty else 0,
             "rsi": "N/A",
@@ -129,65 +121,73 @@ def analyze(df):
     }
 
 # ----------------------
-# HIGH/LOW & VOLUME ALERT
+# GENERATE ALERTS
 # ----------------------
-def get_highs_lows(df):
-    now = df["timestamp"].max()
-    df_12h = df[df["timestamp"] >= now - pd.Timedelta(hours=12)]
-    df_24h = df[df["timestamp"] >= now - pd.Timedelta(hours=24)]
-    
-    return {
-        "12h_high": round(df_12h["close"].max(), 4),
-        "12h_low": round(df_12h["close"].min(), 4),
-        "24h_high": round(df_24h["close"].max(), 4),
-        "24h_low": round(df_24h["close"].min(), 4)
-    }
+def generate_alerts(price, df):
+    alerts = []
 
-def check_volume_spike(df):
-    last_vol = df["volume"].iloc[-1]
-    avg_vol = df["volume"].tail(24).mean()  # last 24 periods
-    if last_vol > avg_vol * 1.5:
-        return "⚡ Volume spike detected!"
-    return ""
+    if price > 2.30:
+        alerts.append("🔵 XRP broke $2.30 — bullish breakout")
+    if price < 2.25:
+        alerts.append("🟥 XRP below $2.25 — danger level")
+    if price < 2.28:
+        alerts.append("⚠ XRP retraced near $2.28 — caution")
+    if price > 2.35:
+        alerts.append("🔺 XRP above $2.35 — strong bullish")
+
+    macd_obj = MACD(df["close"])
+    macd_line = macd_obj.macd().iloc[-1]
+    macd_signal = macd_obj.macd_signal().iloc[-1]
+    if macd_line > macd_signal:
+        alerts.append("🔵 MACD Bullish Crossover")
+    elif macd_line < macd_signal:
+        alerts.append("🔴 MACD Bearish Crossover")
+
+    rsi = RSIIndicator(df["close"], window=14).rsi().iloc[-1]
+    if rsi < 30:
+        alerts.append("🟢 RSI Oversold — potential bullish reversal")
+    elif rsi > 70:
+        alerts.append("🔴 RSI Overbought — potential bearish reversal")
+
+    return alerts
 
 # ----------------------
 # SEND REPORT
 # ----------------------
-def send_report(report, highs_lows, volume_alert):
-    trend_alert = ""
-    if report['bullish_prob'] > 70:
-        trend_alert = "📈 Strong Bullish Trend"
-    elif report['bearish_prob'] > 70:
-        trend_alert = "📉 Strong Bearish Trend"
+def send_report(df, report):
+    last_row = df.iloc[-1]
+    high_12h = df["close"].tail(12).max()
+    low_12h = df["close"].tail(12).min()
+    high_24h = df["close"].tail(24).max()
+    low_24h = df["close"].tail(24).min()
+
+    alerts = generate_alerts(report["price"], df)
+    trend = "Bullish" if report["bullish_prob"] > report["bearish_prob"] else "Bearish"
 
     message = f"""
-**📊 XRP 12-Hour Report**
+**💹 XRP 12-Hour Report**
 
-Price: ${report['price']}
-RSI: {report['rsi']}
-MACD: {report['macd_line']} (signal {report['macd_signal']})
-MA50: {report['ma50']}
-MA200: {report['ma200']}
+💰 Current Price: ${report['price']}
 
-📈 Bullish Probability: {report['bullish_prob']}%
-📉 Bearish Probability: {report['bearish_prob']}%
+⏱ 12-Hour Range
+• High: ${round(high_12h,4)}
+• Low: ${round(low_12h,4)}
 
-High/Low:
-- 12H High: ${highs_lows['12h_high']}
-- 12H Low: ${highs_lows['12h_low']}
-- 24H High: ${highs_lows['24h_high']}
-- 24H Low: ${highs_lows['24h_low']}
+⏱ 24-Hour Range
+• High: ${round(high_24h,4)}
+• Low: ${round(low_24h,4)}
 
-{volume_alert}
-{trend_alert}
+📈 RSI (14): {report['rsi']}
+📉 MACD: {report['macd_line']}
+📉 Signal: {report['macd_signal']}
 
-Alerts:
-- MACD crossover monitored
-- RSI divergence monitored
-- Pattern detection enabled
-"""
+🔍 Trend: {trend}
+
+⚡ Alerts
+""" + "\n".join([f"• {a}" for a in alerts])
+
     try:
-        requests.post(WEBHOOK, json={"content": message}, timeout=10)
+        requests.post(WEBHOOK_URL, json={"content": message}, timeout=10)
         print("✅ Discord report sent")
     except Exception as e:
         print(f"❌ Failed to send Discord report: {e}")
@@ -201,15 +201,11 @@ def main():
         print("⚠️ Skipping report: Failed to fetch data.")
         return
 
-    # Use last row as "current"
     current = df_hist.iloc[-1].to_dict()
     df_hist = update_history(current)
 
     report = analyze(df_hist)
-    highs_lows = get_highs_lows(df_hist)
-    volume_alert = check_volume_spike(df_hist)
-
-    send_report(report, highs_lows, volume_alert)
+    send_report(df_hist, report)
     print("✅ XRP report completed")
 
 if __name__ == "__main__":
