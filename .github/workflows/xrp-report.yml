@@ -1,4 +1,6 @@
 name: XRP 12-Hour Report
+permissions:
+  contents: write
 
 on:
   schedule:
