@@ -1,3 +1,4 @@
+import os
 import requests
 import pandas as pd
 import numpy as np
@@ -9,7 +10,9 @@ from datetime import datetime, timedelta
 # CONFIG
 # ----------------------
 CSV_FILE = "xrp_history.csv"
-WEBHOOK_URL = "https://discord.com/api/webhooks/your_webhook_here"  # Replace with your actual webhook
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Read from environment (GitHub secret)
+if not WEBHOOK_URL:
+    print("❌ ERROR: WEBHOOK_URL not set!")
 
 # ----------------------
 # FETCH DATA
@@ -158,6 +161,8 @@ def send_report(report, df_hist):
     elif report["macd_line"] > report["macd_signal"]:
         alerts.append("🔵 MACD Bullish Crossover")
 
+    alerts_text = "\n• ".join(alerts) if alerts else "None"
+
     message = f"""
 **XRP 12-Hour Report**
 
@@ -180,7 +185,7 @@ def send_report(report, df_hist):
 🔍 Trend: {trend}
 
 ⚡ Alerts
-• " + "\n• ".join(alerts)
+• {alerts_text}
 """
 
     try:
