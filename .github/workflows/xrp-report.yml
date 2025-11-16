@@ -43,7 +43,7 @@ jobs:
 
     - name: Debug High/Low
       run: |
-        python3 - <<EOF
+        python3 - << 'EOF'
 import pandas as pd
 
 df = pd.read_csv("xrp_history.csv")
