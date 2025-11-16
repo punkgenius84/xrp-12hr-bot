@@ -11,14 +11,16 @@ from datetime import datetime, timedelta
 CSV_FILE = "xrp_history.csv"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"  # Replace with your actual webhook
 
+# Percentage thresholds
+DANGER_DROP_PCT = 0.02   # 2% drop from current price triggers danger
+CAUTION_DROP_PCT = 0.01  # 1% drop from current price triggers caution
+
 # ----------------------
 # FETCH DATA
 # ----------------------
 def fetch_30d_hourly():
-    """Fetch 30 days of hourly XRP prices and volumes from CoinGecko"""
     url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart"
     params = {"vs_currency": "usd", "days": "30"}
-
     try:
         data = requests.get(url, params=params, timeout=15).json()
     except Exception as e:
@@ -35,7 +37,6 @@ def fetch_30d_hourly():
     df_prices = pd.DataFrame(prices, columns=["timestamp", "close"])
     df_vol = pd.DataFrame(volumes, columns=["timestamp", "volume"])
 
-    # Convert ms to datetime
     df_prices["timestamp"] = pd.to_datetime(df_prices["timestamp"], unit="ms", errors="coerce")
     df_vol["timestamp"] = pd.to_datetime(df_vol["timestamp"], unit="ms", errors="coerce")
 
@@ -49,18 +50,15 @@ def fetch_30d_hourly():
 # UPDATE HISTORY CSV
 # ----------------------
 def update_history(current_row):
-    """Append latest data to CSV and keep last 30 days"""
     try:
         df_hist = pd.read_csv(CSV_FILE)
         df_hist["timestamp"] = pd.to_datetime(df_hist["timestamp"], errors="coerce")
     except FileNotFoundError:
         df_hist = pd.DataFrame(columns=["timestamp", "close", "high", "low", "volume"])
 
-    # Append only if new timestamp
     if current_row["timestamp"] not in df_hist["timestamp"].values:
         df_hist = pd.concat([df_hist, pd.DataFrame([current_row])], ignore_index=True)
 
-    # Keep last 30 days
     cutoff = datetime.utcnow() - timedelta(days=30)
     df_hist = df_hist[df_hist["timestamp"] >= cutoff]
 
@@ -84,7 +82,6 @@ def analyze(df):
         }
 
     price = df["close"].iloc[-1]
-
     rsi = RSIIndicator(df["close"], window=14).rsi().iloc[-1]
     macd_obj = MACD(df["close"])
     macd_line = macd_obj.macd().iloc[-1]
@@ -93,13 +90,9 @@ def analyze(df):
     ma50 = df["close"].rolling(50).mean().iloc[-1] if len(df) >= 50 else df["close"].mean()
     ma200 = df["close"].rolling(200).mean().iloc[-1] if len(df) >= 200 else df["close"].mean()
 
-    # ----------------------
-    # Base Bullish/Bearish Probability
-    # ----------------------
     bullish_prob = 50
     bearish_prob = 50
 
-    # Price vs MA50
     if price > ma50:
         bullish_prob += 15
         bearish_prob -= 15
@@ -107,7 +100,6 @@ def analyze(df):
         bullish_prob -= 15
         bearish_prob += 15
 
-    # MACD crossover
     if macd_line > macd_signal:
         bullish_prob += 20
         bearish_prob -= 20
@@ -115,7 +107,6 @@ def analyze(df):
         bullish_prob -= 20
         bearish_prob += 20
 
-    # RSI
     if rsi < 30:
         bullish_prob += 10
         bearish_prob -= 10
@@ -123,15 +114,14 @@ def analyze(df):
         bullish_prob -= 10
         bearish_prob += 10
 
-    # Clamp to 0–100
     bullish_prob = max(0, min(100, bullish_prob))
     bearish_prob = max(0, min(100, bearish_prob))
 
     return {
         "price": round(price, 4),
         "rsi": round(rsi, 2) if isinstance(rsi, (float, int)) else "N/A",
-        "macd_line": round(macd_line, 4),
-        "macd_signal": round(macd_signal, 4),
+        "macd_line": round(macd_line, 4) if isinstance(macd_line, (float, int)) else "N/A",
+        "macd_signal": round(macd_signal, 4) if isinstance(macd_signal, (float, int)) else "N/A",
         "ma50": round(ma50, 4),
         "ma200": round(ma200, 4),
         "bullish_prob": round(bullish_prob, 2),
@@ -147,41 +137,22 @@ def send_report(report, df_hist):
 
     trend = "Bullish" if report["bullish_prob"] > report["bearish_prob"] else "Bearish"
 
-    # --- Dynamic thresholds ---
-    low_12h = last_12h.min()
-    high_12h = last_12h.max()
-
-    danger_level = low_12h * 0.985        # 1.5% below 12H low
-    caution_level = low_12h * 0.99        # 1% below 12H low
-    bullish_caution = high_12h * 1.01     # 1% above 12H high
-    bullish_breakout = high_12h * 1.015   # 1.5% above 12H high
+    # Dynamic thresholds based on last price
+    danger_price = report["price"] * (1 - DANGER_DROP_PCT)
+    caution_price = report["price"] * (1 - CAUTION_DROP_PCT)
 
     alerts = []
+    if report["price"] < danger_price:
+        alerts.append(f"🟥 XRP below ${danger_price:.4f} — danger level")
+    elif report["price"] < caution_price:
+        alerts.append(f"⚠ XRP retraced near ${caution_price:.4f} — caution")
 
-    # --- Bearish alerts ---
-    if report["price"] < danger_level:
-        alerts.append(f"🟥 XRP below dynamic danger level ${danger_level:.4f}")
-        report["bearish_prob"] = max(report["bearish_prob"], 90)
-    elif report["price"] < caution_level:
-        alerts.append(f"⚠ XRP near dynamic caution level ${caution_level:.4f}")
-        report["bearish_prob"] = max(report["bearish_prob"], 70)
-
-    # --- Bullish alerts ---
-    if report["price"] > bullish_breakout:
-        alerts.append(f"🟢 XRP above dynamic breakout level ${bullish_breakout:.4f}")
-        report["bullish_prob"] = max(report["bullish_prob"], 90)
-    elif report["price"] > bullish_caution:
-        alerts.append(f"🔵 XRP near dynamic bullish caution level ${bullish_caution:.4f}")
-        report["bullish_prob"] = max(report["bullish_prob"], 70)
-
-    # --- MACD alerts ---
     if report["macd_line"] < report["macd_signal"]:
         alerts.append("🔴 MACD Bearish Crossover")
     elif report["macd_line"] > report["macd_signal"]:
         alerts.append("🔵 MACD Bullish Crossover")
 
-    message = f"""
-**XRP 12-Hour Report**
+    message = f"""**XRP 12-Hour Report**
 
 💰 Current Price: ${report['price']}
 
@@ -202,8 +173,8 @@ def send_report(report, df_hist):
 🔍 Trend: {trend}
 
 ⚡ Alerts
-• " + "\n• ".join(alerts)
-    """
+• {"\n• ".join(alerts) if alerts else 'No alerts at this time'}
+"""
 
     try:
         requests.post(WEBHOOK_URL, json={"content": message}, timeout=10)
