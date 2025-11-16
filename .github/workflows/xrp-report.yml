@@ -44,14 +44,13 @@ jobs:
     - name: Debug High/Low
       run: |
         python3 - <<EOF
-import pandas as pd
-
-df = pd.read_csv("xrp_history.csv")
-last_row = df.iloc[-1]
-
-print("✅ Last recorded price:", last_row["close"])
-print("✅ 12H High:", df["close"].tail(12).max())
-print("✅ 12H Low:", df["close"].tail(12).min())
-print("✅ 24H High:", df["close"].tail(24).max())
-print("✅ 24H Low:", df["close"].tail(24).min())
-EOF
+        import pandas as pd
+        df = pd.read_csv("xrp_history.csv"))
+        last_row = df.iloc[-1]
+    
+        print("✅ Last recorded price:", last_row["close"])
+        print("✅ 12H High:", df["close"].tail(12).max())
+        print("✅ 12H Low:", df["close"].tail(12).min())
+        print("✅ 24H High:", df["close"].tail(24).max())
+        print("✅ 24H Low:", df["close"].tail(24).min())
+        EOF
