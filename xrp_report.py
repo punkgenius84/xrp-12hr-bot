@@ -1,16 +1,16 @@
-import os
 import requests
 import pandas as pd
 import numpy as np
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime, timedelta
+import os
 
 # ----------------------
 # CONFIG
 # ----------------------
 CSV_FILE = "xrp_history.csv"
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Pulls from GitHub Actions secret
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Pull from GitHub secret
 
 # ----------------------
 # FETCH DATA
@@ -57,9 +57,11 @@ def update_history(current_row):
     except FileNotFoundError:
         df_hist = pd.DataFrame(columns=["timestamp", "close", "high", "low", "volume"])
 
+    # Append only if new timestamp
     if current_row["timestamp"] not in df_hist["timestamp"].values:
         df_hist = pd.concat([df_hist, pd.DataFrame([current_row])], ignore_index=True)
 
+    # Keep last 30 days
     cutoff = datetime.utcnow() - timedelta(days=30)
     df_hist = df_hist[df_hist["timestamp"] >= cutoff]
 
@@ -121,33 +123,23 @@ def analyze(df):
     }
 
 # ----------------------
-# GENERATE ALERTS
+# ALERTS
 # ----------------------
 def generate_alerts(price, df):
     alerts = []
-
-    if price > 2.30:
-        alerts.append("🔵 XRP broke $2.30 — bullish breakout")
+    # Update these thresholds as needed
     if price < 2.25:
         alerts.append("🟥 XRP below $2.25 — danger level")
-    if price < 2.28:
+    elif price < 2.28:
         alerts.append("⚠ XRP retraced near $2.28 — caution")
-    if price > 2.35:
-        alerts.append("🔺 XRP above $2.35 — strong bullish")
 
     macd_obj = MACD(df["close"])
     macd_line = macd_obj.macd().iloc[-1]
     macd_signal = macd_obj.macd_signal().iloc[-1]
     if macd_line > macd_signal:
-        alerts.append("🔵 MACD Bullish Crossover")
-    elif macd_line < macd_signal:
+        alerts.append("🟢 MACD Bullish Crossover")
+    else:
         alerts.append("🔴 MACD Bearish Crossover")
-
-    rsi = RSIIndicator(df["close"], window=14).rsi().iloc[-1]
-    if rsi < 30:
-        alerts.append("🟢 RSI Oversold — potential bullish reversal")
-    elif rsi > 70:
-        alerts.append("🔴 RSI Overbought — potential bearish reversal")
 
     return alerts
 
@@ -181,6 +173,9 @@ def send_report(df, report):
 📉 MACD: {report['macd_line']}
 📉 Signal: {report['macd_signal']}
 
+📈 Bullish Probability: {report['bullish_prob']}%
+📉 Bearish Probability: {report['bearish_prob']}%
+
 🔍 Trend: {trend}
 
 ⚡ Alerts
@@ -201,6 +196,7 @@ def main():
         print("⚠️ Skipping report: Failed to fetch data.")
         return
 
+    # Use last row as "current"
     current = df_hist.iloc[-1].to_dict()
     df_hist = update_history(current)
 
