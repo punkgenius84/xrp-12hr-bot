@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # CONFIG
 # ----------------------
 CSV_FILE = "xrp_history.csv"
-WEBHOOK_URL = "https://discord.com/api/webhooks/your_webhook_here"  # Replace with your actual webhook
+WEBHOOK_URL = "https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY"  # Replace with your actual webhook
 
 # ----------------------
 # FETCH DATA
