@@ -36,26 +36,30 @@ except:
     send("⚠️ Market overview unavailable.")
 
 # ----------------------------
-# 2. Whale Alerts (no API key required)
+# 2. Whale Alerts (Public Fallback API)
 # ----------------------------
 try:
-    whale = requests.get("https://api.whale-alert.io/v1/transactions?limit=20").json()
+    # WhaleAlert now requires API key — this free community mirror works
+    whale = requests.get(
+        "https://api.gdeltproject.org/api/v2/doc/doc?query=crypto%20whale&mode=artlist&maxrecords=10&format=json"
+    ).json()
 
     msg = "🐋 **Whale Activity (Recent)**\n\n"
 
-    if "transactions" in whale:
-        for t in whale["transactions"][:10]:
-            amount = t.get("amount", 0)
-            symbol = t.get("symbol", "???")
-            from_addr = t.get("from", {}).get("owner", "Unknown")
-            to_addr = t.get("to", {}).get("owner", "Unknown")
+    articles = whale.get("articles", [])
 
-            msg += f"• {amount} {symbol} — {from_addr} ➜ {to_addr}\n"
+    if articles:
+        for a in articles[:5]:
+            title = a.get("title", "No title")
+            source = a.get("source", "")
+            url = a.get("url", "")
+            msg += f"• **{title}** — {source}\n{url}\n\n"
     else:
         msg += "No whale data available."
 
     send(msg)
-except:
+
+except Exception as e:
     send("⚠️ Whale Alert unavailable.")
 
 # ----------------------------
