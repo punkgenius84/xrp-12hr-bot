@@ -1,0 +1,44 @@
+name: Crypto Intelligence (12H + OnDemand)
+
+
+permissions:
+contents: write
+
+
+on:
+schedule:
+- cron: "0 */12 * * *" # Every 12 hours
+workflow_dispatch:
+
+
+jobs:
+crypto-intel:
+runs-on: ubuntu-latest
+steps:
+- name: Checkout
+uses: actions/checkout@v4
+
+
+- name: Set up Python
+uses: actions/setup-python@v4
+with:
+python-version: "3.10"
+
+
+- name: Install dependencies
+run: |
+python -m pip install --upgrade pip
+pip install requests pandas numpy matplotlib pillow ta textblob mplfinance
+
+
+- name: Run Crypto Intelligence Engine
+env:
+DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+CRYPTOPANIC_KEY: ${{ secrets.CRYPTOPANIC_KEY }}
+WHALE_ALERT_KEY: ${{ secrets.WHALE_ALERT_KEY }}
+GLASSNODE_KEY: ${{ secrets.GLASSNODE_KEY }}
+BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+X_API_BEARER: ${{ secrets.X_API_BEARER }}
+run: |
+python3 scripts/crypto_intel.py --mode scheduled
