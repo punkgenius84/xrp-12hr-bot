@@ -1,4 +1,6 @@
+request
 pandas
+feedparser
 numpy
 ta
 requests
