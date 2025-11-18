@@ -115,60 +115,97 @@ except Exception as e:
     messages.append("⚠️ Market overview unavailable.")
 
 # ----------------------------
-# 2. Whale Tracker (Million+ transfers, largest in 24h, exchange flows)
+# 2. Whale Alerts – On-Chain (robust: debug + fallback to 100k)
 # ----------------------------
 try:
-    whale_msg = "🐋 **On-Chain Whale Tracker (Million+ USD Transfers)**\n\n"
-    biggest = {"amount": 0, "chain": None, "tx": None}
+    msg = "🐋 **On-Chain Whale Tracker (Million+ USD Transfers)**\n\n"
+
+    datasets = {
+        "Bitcoin": "https://bitinfocharts.com/api/v1/large-transactions/btc",
+        "Ethereum": "https://bitinfocharts.com/api/v1/large-transactions/eth",
+        "XRP": "https://bitinfocharts.com/api/v1/large-transactions/xrp",
+        "Solana": "https://bitinfocharts.com/api/v1/large-transactions/sol",
+        "TRON": "https://bitinfocharts.com/api/v1/large-transactions/trx",
+        "Cardano": "https://bitinfocharts.com/api/v1/large-transactions/ada",
+        "Polygon": "https://bitinfocharts.com/api/v1/large-transactions/matic",
+        "Tether USDT": "https://bitinfocharts.com/api/v1/large-transactions/usdt",
+    }
+
+    biggest_transfer = {"amount": 0, "chain": None, "tx": None}
     exchange_inflows = 0.0
     exchange_outflows = 0.0
 
-    now = datetime.utcnow()
-    cutoff_ts = now - timedelta(hours=24)
+    exchanges = [
+        "binance", "coinbase", "kraken", "bitfinex",
+        "huobi", "kucoin", "okx", "mexc", "bitstamp", "gateio", "gemini"
+    ]
 
-    # iterate chains
-    for chain_name, slug in CHAIN_ENDPOINTS.items():
-        url = f"https://bitinfocharts.com/api/v1/large-transactions/{slug}"
+    MIN_USD = 1_000_000  # primary threshold
+    FALLBACK_MIN_USD = 100_000  # fallback threshold if no million+ transfers found
+
+    any_million_found = False
+
+    for chain, url in datasets.items():
         try:
             res = requests.get(url, timeout=12)
-            data = res.json() if res.status_code == 200 else []
+            status = res.status_code
+            # Print debug info to Actions log so you can inspect responses:
+            print(f"[whale] {chain} {url} => status {status}")
+            try:
+                data = res.json() if status == 200 else []
+            except Exception as e:
+                # sometimes endpoint returns HTML/text; log a small sample
+                text_sample = res.text[:400].replace("\n"," ")
+                print(f"[whale] {chain} json parse failed, sample: {text_sample}")
+                data = []
+
         except Exception as e:
-            print(f"Error fetching {chain_name} whale data:", e)
+            print(f"[whale] fetch error for {chain}: {e}")
             data = []
 
-        # ensure list
-        if not isinstance(data, list):
-            whale_msg += f"**{chain_name}:** No data\n\n"
+        if not isinstance(data, list) or len(data) == 0:
+            msg += f"**{chain}:** No $1,000,000+ transfers in feed (or feed empty)\n\n"
             continue
 
-        # filter million+ and within 24h if timestamp present
-        filtered = []
+        # filter actual million+ transfers
+        transfers = []
         for t in data:
             try:
                 amt = float(t.get("amount_usd", 0))
             except Exception:
                 amt = 0.0
-            # try to interpret timestamp if present (bitinfocharts format may vary)
+            # optional timestamp filtering (if feed provides 'time' or 'timestamp')
             ts = None
             if isinstance(t.get("time"), (int, float)):
-                ts = datetime.utcfromtimestamp(int(t.get("time")))
-            elif t.get("time") is None and t.get("timestamp"):
                 try:
-                    ts = datetime.utcfromtimestamp(int(t.get("timestamp")))
+                    ts = datetime.utcfromtimestamp(int(t.get("time")))
                 except Exception:
                     ts = None
-            # accept if over threshold and (no timestamp or within 24h)
-            if amt >= MIN_TRANSFER_USD and (ts is None or ts >= cutoff_ts):
-                filtered.append(t)
 
-        if not filtered:
-            whale_msg += f"**{chain_name}:** No $1,000,000+ transfers in feed\n\n"
-            continue
+            if amt >= MIN_USD:
+                transfers.append((amt, t))
+                any_million_found = True
 
-        whale_msg += f"**{chain_name} – Top Million+ Transfers**\n"
-        # show up to top 5
-        for tx in filtered[:5]:
-            amount = float(tx.get("amount_usd", 0))
+        if not transfers:
+            # Fallback: show >= FALLBACK_MIN_USD so we can confirm feed is live
+            small_transfers = []
+            for t in data:
+                try:
+                    amt = float(t.get("amount_usd", 0))
+                except Exception:
+                    amt = 0.0
+                if amt >= FALLBACK_MIN_USD:
+                    small_transfers.append((amt, t))
+            if small_transfers:
+                msg += f"**{chain}:** No $1,000,000+ transfers, showing >= ${FALLBACK_MIN_USD:,} instead\n"
+                transfers = sorted(small_transfers, key=lambda x: -x[0])
+            else:
+                msg += f"**{chain}:** No $100k+ transfers in feed\n\n"
+                continue
+
+        # report top 5 transfers for this chain
+        msg += f"**{chain} – Top Transfers**\n"
+        for amt, tx in transfers[:5]:
             sender = str(tx.get("from", tx.get("sender", "Unknown")))
             receiver = str(tx.get("to", tx.get("receiver", "Unknown")))
             hash_url = tx.get("hash_url", tx.get("tx_url", "")) or ""
@@ -178,52 +215,57 @@ try:
                     time_str = datetime.utcfromtimestamp(int(tx.get("time"))).strftime("%Y-%m-%d %H:%M UTC")
                 except Exception:
                     time_str = ""
-            whale_msg += f"• {fmt_usd(amount)} — From `{sender}` ➜ `{receiver}`\n  TX: {hash_url} {time_str}\n"
+            msg += f"• ${int(amt):,} — From `{sender}` ➜ `{receiver}`\n  TX: {hash_url} {time_str}\n"
 
-            # update biggest
-            if amount > biggest["amount"]:
-                biggest = {"amount": amount, "chain": chain_name, "tx": tx}
+            # update biggest transfer
+            if amt > biggest_transfer["amount"]:
+                biggest_transfer = {"amount": amt, "chain": chain, "tx": tx}
 
-            # exchange detection (simple substring)
             s_lower = sender.lower()
             r_lower = receiver.lower()
-            s_ex = any(ex in s_lower for ex in EXCHANGE_KEYWORDS)
-            r_ex = any(ex in r_lower for ex in EXCHANGE_KEYWORDS)
+            # improved exchange detection:
+            s_ex = any(ex in s_lower for ex in exchanges) or any(ex in (hash_url or "").lower() for ex in exchanges)
+            r_ex = any(ex in r_lower for ex in exchanges) or any(ex in (hash_url or "").lower() for ex in exchanges)
             if r_ex:
-                exchange_inflows += amount
+                exchange_inflows += amt
             if s_ex:
-                exchange_outflows += amount
+                exchange_outflows += amt
 
-        whale_msg += "\n"
+        msg += "\n"
 
-    # largest whale summary
-    if biggest["amount"] > 0:
-        tx = biggest["tx"]
-        whale_msg += "🏆 **Largest Whale Transfer (Last 24h)**\n"
-        whale_msg += f"• Chain: **{biggest['chain']}**\n"
-        whale_msg += f"• Amount: **{fmt_usd(biggest['amount'])}**\n"
-        whale_msg += f"• From: `{tx.get('from', '?')}`\n"
-        whale_msg += f"• To: `{tx.get('to', '?')}`\n"
-        whale_msg += f"• TX: {tx.get('hash_url', tx.get('tx_url', ''))}\n\n"
+    # summary for largest whale
+    if biggest_transfer["amount"] > 0:
+        tx = biggest_transfer["tx"]
+        msg += "🏆 **Largest Whale Transfer (From feeds, ~24h)**\n"
+        msg += f"• Chain: **{biggest_transfer['chain']}**\n"
+        msg += f"• Amount: **${int(biggest_transfer['amount']):,}**\n"
+        msg += f"• From: `{tx.get('from', tx.get('sender','?'))}`\n"
+        msg += f"• To: `{tx.get('to', tx.get('receiver','?'))}`\n"
+        msg += f"• TX: {tx.get('hash_url', tx.get('tx_url',''))}\n\n"
     else:
-        whale_msg += "🏆 **Largest Whale Transfer:** No data.\n\n"
+        msg += "🏆 **Largest Whale Transfer:** No data found in the feeds.\n\n"
 
-    # exchange flows summary
-    whale_msg += "🏦 **Exchange Flow Summary (approx, USD)**\n"
-    whale_msg += f"• **Exchange Inflows:** {fmt_usd(exchange_inflows)}\n"
-    whale_msg += f"• **Exchange Outflows:** {fmt_usd(exchange_outflows)}\n"
-    # market pressure
+    # exchange flow summary
+    msg += "🏦 **Exchange Flow Summary (approx, USD)**\n"
+    msg += f"• **Exchange Inflows:** ${int(exchange_inflows):,}\n"
+    msg += f"• **Exchange Outflows:** ${int(exchange_outflows):,}\n"
     if exchange_inflows > exchange_outflows * 1.3:
-        whale_msg += "📉 **Market Pressure:** Bearish (More flowing INTO exchanges)\n"
+        msg += "📉 **Market Pressure:** Bearish (More flowing INTO exchanges)\n"
     elif exchange_outflows > exchange_inflows * 1.3:
-        whale_msg += "📈 **Market Pressure:** Bullish (More flowing OUT of exchanges)\n"
+        msg += "📈 **Market Pressure:** Bullish (More flowing OUT of exchanges)\n"
     else:
-        whale_msg += "⚖️ **Market Pressure:** Neutral\n"
+        msg += "⚖️ **Market Pressure:** Neutral\n"
 
-    messages.append(whale_msg)
+    # if no million found, add note
+    if not any_million_found:
+        msg += "\n_Note: No $1M+ transfers were found in primary feeds; displayed smaller transfers (>= $100k) where available._\n"
+
+    send(msg)
+
 except Exception as e:
-    print("Whale tracker error:", e)
-    messages.append("⚠️ Whale tracker unavailable.")
+    print("Whale section fatal error:", e)
+    send("⚠️ Whale section failed.")
+
 
 # ----------------------------
 # 3. Crypto News (Cryptopanic fallback) - may be rate limited
