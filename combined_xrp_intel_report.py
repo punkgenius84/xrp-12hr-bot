@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 XRP Combined Intel Report – Discord + X Auto-Post
-Smart adaptive levels · Clickable news · Pro-tier bot
-November 2025 – Final perfection
+Smart levels · Clickable news · Works 100% on GitHub Actions
+November 2025 – Final bulletproof version
 """
 
 import os
@@ -12,10 +12,21 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime
+import time
+import hmac
+import hashlib
+import urllib.parse
+import base64
+import binascii
 
 # ========================= CONFIG =========================
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
-X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN")   # Add this secret in GitHub Secrets
+
+# OAuth 1.0a credentials (required for posting to X)
+X_API_KEY = os.getenv("X_API_KEY")
+X_API_SECRET = os.getenv("X_API_SECRET")
+X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
+X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
 
 CSV_FILE = "xrp_history.csv"
 
@@ -32,19 +43,51 @@ def send_discord(msg):
     except Exception as e:
         print("Discord send failed:", e)
 
+# ========================= X POST (OAuth 1.0a) =========================
 def post_to_x(text):
-    if not X_BEARER_TOKEN:
-        print("No X bearer token → skipping X post")
+    if not all([X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET]):
+        print("Missing X OAuth credentials → skipping X post")
         return
+
     url = "https://api.x.com/2/tweets"
-    headers = {"Authorization": f"Bearer {X_BEARER_TOKEN}", "Content-Type": "application/json"}
+    oauth_nonce = binascii.b2a_hex(os.urandom(16)).decode()
+    oauth_timestamp = str(int(time.time()))
+
+    params = {
+        "oauth_consumer_key": X_API_KEY,
+        "oauth_nonce": oauth_nonce,
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp": oauth_timestamp,
+        "oauth_token": X_ACCESS_TOKEN,
+        "oauth_version": "1.0",
+        "text": text
+    }
+
+    # Generate signature
+    base_string = "&".join([
+        "POST",
+        urllib.parse.quote(url, safe=""),
+        urllib.parse.quote("&".join([f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in sorted(params.items())]), safe="")
+    ])
+    signing_key = f"{urllib.parse.quote(X_API_SECRET, safe='')}&{urllib.parse.quote(X_ACCESS_SECRET, safe='')}"
+    hashed = hmac.new(signing_key.encode(), base_string.encode(), hashlib.sha1)
+    signature = base64.b64encode(hashed.digest()).decode()
+    params["oauth_signature"] = signature
+
+    auth_header = "OAuth " + ", ".join([f'{k}="{urllib.parse.quote(v, safe="")}"' for k, v in params.items() if k.startswith("oauth_")])
+
+    headers = {
+        "Authorization": auth_header,
+        "Content-Type": "application/json"
+    }
     payload = {"text": text}
+
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=10)
         if r.status_code == 201:
-            print("Posted to X successfully!")
+            print("Successfully posted to X!")
         else:
-            print(f"X post failed: {r.status_code} {r.text}")
+            print(f"X post failed ({r.status_code}): {r.text}")
     except Exception as e:
         print("X post error:", e)
 
@@ -207,7 +250,7 @@ def build_x_teaser(df):
     prev_price = df["close"].iloc[-24] if len(df) >= 24 else price
     change_24h = (price / prev_price - 1) * 100
     levels = dynamic_levels(df)
-    main_trigger = flips_triggers(price, levels).split(",")[0] if "None" not in flips_triggers(price, levels) else "Holding steady"
+    main_trigger = flips_triggers(price, levels).split(",")[0] if "None" not in flips_triggers(price, levels) else "Holding"
 
     return f"""🚨 XRP Intel Drop — {datetime.utcnow().strftime('%b %d, %H:%M')} UTC
 
@@ -215,14 +258,13 @@ def build_x_teaser(df):
 📊 RSI: {fmt(RSIIndicator(df['close'],14).rsi().iloc[-1])}
 🔥 {main_trigger}
 
-Full alpha in my Discord 👇
+Full report in my Discord 👇
 #XRP #Ripple #Crypto"""
 
 # ========================= MAIN =========================
 def main():
     fresh_df = fetch_xrp_hourly_data()
 
-    # Safe CSV handling
     old_df = pd.DataFrame()
     if os.path.exists(CSV_FILE):
         try:
