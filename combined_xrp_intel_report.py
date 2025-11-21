@@ -57,28 +57,39 @@ def send_discord(content: str, webhook: str = DISCORD_WEBHOOK):
         print("DEBUG: Failed to send to Discord:", e)
 
 # ---------------------------- DATA FETCHING ----------------------------
-
 def fetch_xrp_hourly_data() -> pd.DataFrame:
-    """Fetch last ~41 days of hourly XRP/USDT candles from Binance"""
-    url = "https://api.binance.com/api/v3/klines"
+    """Fetch hourly XRP price data from CoinGecko (works reliably in GitHub Actions)"""
+    print("Fetching XRP hourly data from CoinGecko...")
+    url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart"
     params = {
-        "symbol": "XRPUSDT",
-        "interval": "1h",
-        "limit": 1000  # max allowed
+        "vs_currency": "usd",
+        "days": "30",      # last 30 days → hourly resolution
+        "interval": "hourly",
+        "precision": 4
     }
-    print("Fetching fresh XRP data from Binance...")
-    resp = requests.get(url, params=params, timeout=15)
+    headers = {
+        "User-Agent": "XRP-Report-Bot/1.0"
+    }
+    resp = requests.get(url, params=params, headers=headers, timeout=20)
     resp.raise_for_status()
     data = resp.json()
 
-    df = pd.DataFrame(data, columns=[
-        "open_time", "open", "high", "low", "close", "volume",
-        "close_time", "quote_volume", "trades", "taker_buy_base", "taker_buy_quote", "ignore"
-    ])
+    prices = pd.DataFrame(data["prices"], columns=["timestamp_ms", "close"])
+    volumes = pd.DataFrame(data["total_volumes"], columns=["timestamp_ms", "volume"])
+
+    df = prices.merge(volumes, on="timestamp_ms")
+    df["timestamp_ms"] = pd.to_datetime(df["timestamp_ms"], unit="ms")
+    
+    # Fake open=high=low=close (CoinGecko only gives close + volume)
+    df["open"] = df["close"]
+    df["high"] = df["close"]
+    df["low"] = df["close"]
+    
+    df = df.rename(columns={"timestamp_ms": "open_time"})
     df = df[["open_time", "open", "high", "low", "close", "volume"]]
-    df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
-    df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
     df = df.sort_values("open_time").reset_index(drop=True)
+    
+    print(f"Fetched {len(df)} hourly candles from CoinGecko")
     return df
 
 # ---------------------------- INDICATORS ----------------------------
