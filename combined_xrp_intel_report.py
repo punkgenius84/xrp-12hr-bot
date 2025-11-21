@@ -19,6 +19,8 @@ from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime, timedelta, timezone
 
+print("DISCORD_WEBHOOK:", DISCORD_WEBHOOK) 
+
 # ----------------------------
 # CONFIG
 # ----------------------------
