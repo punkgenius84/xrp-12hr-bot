@@ -1,5 +1,67 @@
+#!/usr/bin/env python3
+"""
+combined_xrp_intel_report.py
+
+Combined Crypto Intel + XRP 12-Hour Report
+- Full Discord report with indicators, alerts, patterns, news
+- Volume spike and MACD crossover alerts
+- Multi-timeframe confirmations
+- Updates xrp_history.csv automatically
+- Dynamic caution/strong/danger levels
+- DEBUG mode added for GitHub Actions
+"""
+
+import os
+import time
+import requests
+import feedparser
+import pandas as pd
+import numpy as np
+from ta.momentum import RSIIndicator
+from ta.trend import MACD
+from datetime import datetime, timedelta
+
 # ----------------------------
-# COMPOSE DISCORD MESSAGE (Updated with dynamic caution levels)
+# CONFIG
+# ----------------------------
+
+# Load Discord webhook from environment at the very top
+DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
+print("DEBUG: DISCORD_WEBHOOK =", DISCORD_WEBHOOK)  # <-- debug
+
+CSV_FILE = "xrp_history.csv"
+
+VOLUME_SPIKE_LEVELS = {"caution": 1.15, "strong": 1.30, "extreme": 1.50}
+RSI_WINDOW = 14
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+SWING_WINDOW = 24
+COMPRESSION_WINDOW = 24
+PULSE_STACK_WINDOW = 12
+SENTINEL_WINDOW = 24
+
+# ----------------------------
+# UTILITY FUNCTIONS
+# ----------------------------
+
+def send_discord(content: str, webhook: str = DISCORD_WEBHOOK):
+    if not webhook:
+        print("DEBUG: Webhook not set, skipping Discord send")
+        return
+    try:
+        r = requests.post(webhook, json={"content": content}, timeout=10)
+        print(f"DEBUG: Discord POST status {r.status_code}")  # debug
+        if r.status_code not in (200, 204):
+            print(f"Discord responded {r.status_code}: {r.text[:300]}")
+        else:
+            print("Discord message sent successfully")
+    except Exception as e:
+        print("Failed to send to Discord:", e)
+
+
+# ----------------------------
+# COMPOSE DISCORD MESSAGE
 # ----------------------------
 def compose_discord_message(df, live_price):
     indicators = compute_indicators(df)
@@ -61,13 +123,10 @@ def compose_discord_message(df, live_price):
     
     # --- Dynamic Caution Levels ---
     caution_levels = []
-    # Weak Caution
     if (levels["breakout_weak"] <= price <= levels["breakout_strong"]) or (vol["ratio"] >= 1.15):
         caution_levels.append(f"⚠️ Weak Caution 🟡 - Price/volume approaching warning zone (x{vol['ratio']:.2f})")
-    # Strong Caution
     if (levels["breakout_strong"] < price <= levels["breakout_strong"]*1.02) or (vol["ratio"] >= 1.30):
         caution_levels.append(f"⚠️ Strong Caution 🟠 - Price/volume in high-risk zone (x{vol['ratio']:.2f})")
-    # Danger Zone
     if price >= levels["breakout_strong"]*1.06 or price <= levels["danger"] or (vol["ratio"] >= 1.50):
         caution_levels.append(f"🚨 Danger Zone 🔴 - Price/volume in danger territory (x{vol['ratio']:.2f})")
     caution_text = "\n".join(caution_levels) if caution_levels else "None"
