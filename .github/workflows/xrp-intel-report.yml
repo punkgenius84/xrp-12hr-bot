@@ -37,7 +37,7 @@ jobs:
         run: |
           python combined_xrp_intel_report.py
 
-      - name: Commit updated CSV if changed
+            - name: Commit updated CSV if changed
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -49,3 +49,5 @@ jobs:
             git push origin main --force
           else
             echo "No changes in xrp_history.csv — skipping commit."
+            fi
+
