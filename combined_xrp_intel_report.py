@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-XRP Combined Intel Report – Discord + X Auto-Post (OAuth 2.0 Bearer Token)
+XRP Combined Intel Report – Discord + X Auto-Post (OAuth 1.0a User Context)
 Smart adaptive levels · Clickable news · Works perfectly on GitHub Actions
 November 2025 – FINAL VERSION
 """
@@ -12,10 +12,14 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime
+from requests_oauthlib import OAuth1
 
 # ========================= CONFIG =========================
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
-X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN")   # <-- Only this one secret needed now
+X_API_KEY = os.getenv("X_API_KEY")
+X_API_SECRET = os.getenv("X_API_SECRET")
+X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
+X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
 
 CSV_FILE = "xrp_history.csv"
 
@@ -32,21 +36,23 @@ def send_discord(msg):
     except Exception as e:
         print("Discord send failed:", e)
 
-# ========================= X POST (OAuth 2.0 Bearer Token) =========================
+# ========================= X POST (OAuth 1.0a User Context) =========================
 def post_to_x(text):
-    if not X_BEARER_TOKEN:
-        print("No X_BEARER_TOKEN → skipping X post")
+    if not all([X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET]):
+        print("Missing X credentials → skipping X post")
         return
 
-    url = "https://api.x.com/2/tweets"
-    headers = {
-        "Authorization": f"Bearer {X_BEARER_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    url = "https://api.twitter.com/2/tweets"  # Note: X is Twitter API under the hood
+    auth = OAuth1(
+        X_API_KEY,
+        client_secret=X_API_SECRET,
+        resource_owner_key=X_ACCESS_TOKEN,
+        resource_owner_secret=X_ACCESS_SECRET
+    )
     payload = {"text": text}
 
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=10)
+        r = requests.post(url, json=payload, auth=auth, timeout=10)
         if r.status_code == 201:
             print("Successfully posted to X!")
         else:
