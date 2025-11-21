@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-XRP Combined Intel Report – Full Featured + Beautiful Discord Output
-Works perfectly in GitHub Actions (Nov 2025)
+XRP Combined Intel Report – With Clickable News + Thumbnails
+Perfect for Discord (auto-previews!)
 """
 
 import os
@@ -12,11 +12,9 @@ from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime
 
-# ---------------------------- CONFIG ----------------------------
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 CSV_FILE = "xrp_history.csv"
 
-# ---------------------------- HELPERS ----------------------------
 def fmt(x):
     return f"{float(x):,.4f}".rstrip("0").rstrip(".") if isinstance(x, float) else str(x)
 
@@ -25,14 +23,13 @@ def send_discord(msg):
         print("DRY RUN:\n" + msg)
         return
     try:
-        r = requests.post(DISCORD_WEBHOOK, json={"content": msg}, timeout=10)
+        r = requests.post(DISCORD_WEBHOOK, json={"content": msg}, timeout=15)
         print(f"Discord → {r.status_code}")
     except Exception as e:
         print("Send failed:", e)
 
-# ---------------------------- DATA ----------------------------
 def fetch_xrp_hourly_data() -> pd.DataFrame:
-    print("Fetching XRP/USDT hourly data from CryptoCompare...")
+    print("Fetching XRP/USDT hourly from CryptoCompare...")
     url = "https://min-api.cryptocompare.com/data/v2/histohour"
     params = {"fsym": "XRP", "tsym": "USDT", "limit": 2000}
     resp = requests.get(url, params=params, timeout=20)
@@ -42,10 +39,9 @@ def fetch_xrp_hourly_data() -> pd.DataFrame:
     df["open_time"] = pd.to_datetime(df["time"], unit="s")
     df = df.rename(columns={"volumeto": "volume"})
     df = df[["open_time", "open", "high", "low", "close", "volume"]]
-    print(f"Fetched {len(df)} hourly candles")
+    print(f"Fetched {len(df)} candles")
     return df
 
-# ---------------------------- INDICATORS ----------------------------
 def compute_indicators(df):
     c = df["close"]
     rsi = RSIIndicator(c, window=14).rsi().iloc[-1]
@@ -55,7 +51,7 @@ def compute_indicators(df):
         "rsi": rsi,
         "macd": macd.macd().iloc[-1],
         "signal": macd.macd_signal().iloc[-1],
-        "hist_trend": "Increasing 🟢" if hist.iloc[-1] > hist.iloc[-2] else "Decreasing 🔴",
+        "hist_trend": "Increasing 🟢" if len(hist) > 1 and hist.iloc[-1] > hist.iloc[-2] else "Decreasing 🔴",
         "ma50": c.rolling(50).mean().iloc[-1],
         "ma200": c.rolling(200).mean().iloc[-1],
     }
@@ -69,7 +65,7 @@ def volume_spike(df):
     return "No surge"
 
 def dynamic_levels(df):
-    high = df["high"].tail(72).max()   # ~3 days
+    high = df["high"].tail(72).max()
     low = df["low"].tail(72).min()
     r = high - low
     return {
@@ -98,14 +94,26 @@ def caution_level(price, vol_ratio, levels):
         return "🟡 Weak Caution"
     return "✅ Safe levels"
 
-def get_news():
+# ================================
+# BEAUTIFUL CLICKABLE NEWS WITH THUMBNAILS
+# ================================
+def get_news_section():
     try:
-        f = feedparser.parse("https://cryptonews.com/news/rss/")
-        return "\n".join(f"• {e.title}" for e in f.entries[:6])
-    except:
-        return "• News temporarily unavailable"
+        feed = feedparser.parse("https://cryptonews.com/news/rss/")
+        news_lines = []
+        for entry in feed.entries[:5]:  # top 5 stories
+            title = entry.title.strip()
+            link = entry.link.strip()
+            # Discord will auto-unfurl the preview (with thumbnail!) if we just send the URL on its own line
+            news_lines.append(f"**{title}**\n{link}\n")
+        return "\n".join(news_lines) if news_lines else "No recent news"
+    except Exception as e:
+        print("News fetch failed:", e)
+        return "News temporarily unavailable"
 
-# ---------------------------- MESSAGE ----------------------------
+# ================================
+# MESSAGE
+# ================================
 def build_message(df):
     price = df["close"].iloc[-1]
     i = compute_indicators(df)
@@ -139,29 +147,32 @@ def build_message(df):
 
 📊 **Volume Signals:** {vol_text}
 📊 **MACD Histogram Trend:** {i['hist_trend']}
-🧭 **Support/Resistance:** 24h High: `${fmt(high24)}`, 24h Low: `${fmt(low24)}`
+🧭 **24h High/Low:** `${fmt(high24)}` / `${fmt(low24)}`
 
 📌 **Dynamic Levels**
 • Breakout weak: `${fmt(levels['breakout_weak'])}`
 • Breakout strong: `${fmt(levels['breakout_strong'])}`
 • Breakdown weak: `${fmt(levels['breakdown_weak'])}`
 • Breakdown strong: `${fmt(levels['breakdown_strong'])}`
-• Danger level: `${fmt(levels['danger'])}`
+• Danger: `${fmt(levels['danger'])}`
 
 🔔 **Flips/Triggers:** {triggers}
 **⚠️ Caution Level:** {caution}
 
-**📰 Top Crypto News**
-{get_news()}
+**📰 Latest XRP & Crypto News** (click title for full article + preview)
+{get_news_section()}
 
 *Auto-updated via GitHub Actions • {len(df)} hourly candles*
     """.strip()
 
-# ---------------------------- MAIN ----------------------------
+# ================================
+# MAIN
+# ================================
 def main():
     fresh_df = fetch_xrp_hourly_data()
 
-    # Safe CSV load
+    # Safe CSV handling
+    old_df = pd.DataFrame()
     if os.path.exists(CSV_FILE):
         try:
             old_df = pd.read_csv(CSV_FILE)
@@ -171,10 +182,7 @@ def main():
                 old_df = pd.DataFrame()
         except:
             old_df = pd.DataFrame()
-    else:
-        old_df = pd.DataFrame()
 
-    # Merge
     df = pd.concat([old_df, fresh_df]).drop_duplicates(subset="open_time").sort_values("open_time").reset_index(drop=True)
     df.to_csv(CSV_FILE, index=False)
     print(f"Updated CSV → {len(df)} rows")
@@ -184,7 +192,7 @@ def main():
         return
 
     send_discord(build_message(df))
-    print("Full report sent!")
+    print("Beautiful report with clickable news sent!")
 
 if __name__ == "__main__":
     main()
