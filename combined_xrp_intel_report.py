@@ -105,7 +105,7 @@ def fetch_live_price():
         print("Live price fetch failed:", e)
         return None, None
 
-def fetch_crypto_news(limit=5):
+def news_links = "\n".join([entry.link for entry in feedparser.parse("https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml").entries[:5]])
     news_msg = ""
     try:
         feed = feedparser.parse("https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml")
