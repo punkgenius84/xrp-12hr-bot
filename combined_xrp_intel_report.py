@@ -3,12 +3,20 @@
 combined_xrp_intel_report.py
 
 Combined Crypto Intel + XRP 12-Hour Report
-- Full Discord report with indicators, alerts, patterns, news
-- Volume spike and MACD crossover alerts
-- Multi-timeframe confirmations
-- Updates xrp_history.csv automatically
-- Dynamic caution/strong/danger levels
+
+Full Discord report with indicators, alerts, patterns, news
+
+Volume spike and MACD crossover alerts
+
+Multi-timeframe confirmations
+
+Updates xrp_history.csv automatically
+
+Dynamic caution/strong/danger levels
+
+DEBUG mode added for GitHub Actions
 """
+
 import os
 import time
 import requests
@@ -17,12 +25,16 @@ import pandas as pd
 import numpy as np
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-# ----------------------------
-# CONFIG
-# ----------------------------
+----------------------------
+CONFIG
+----------------------------
+Grab Discord webhook from environment (GitHub Actions secret)
+
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
+print("DEBUG: DISCORD_WEBHOOK =", DISCORD_WEBHOOK) # <-- debug
+
 CSV_FILE = "xrp_history.csv"
 
 VOLUME_SPIKE_LEVELS = {"caution": 1.15, "strong": 1.30, "extreme": 1.50}
@@ -35,33 +47,35 @@ COMPRESSION_WINDOW = 24
 PULSE_STACK_WINDOW = 12
 SENTINEL_WINDOW = 24
 
-# ----------------------------
-# UTILITIES
-# ----------------------------
-def send_discord(content: str, webhook: str = DISCORD_WEBHOOK):
-    """Post a plain message to Discord webhook (content only)."""
-    if not webhook:
-        print("Webhook not set, skipping Discord send")
-        return
-    try:
-        r = requests.post(webhook, json={"content": content}, timeout=10)
-        if r.status_code not in (200, 204):
-            print(f"Discord responded {r.status_code}: {r.text[:300]}")
-        else:
-            print("Discord message sent")
-    except Exception as e:
-        print("Failed to send to Discord:", e)
+----------------------------
+UTILITY FUNCTIONS
+----------------------------
 
+def send_discord(content: str, webhook: str = DISCORD_WEBHOOK):
+if not webhook:
+print("DEBUG: Webhook not set, skipping Discord send")
+return
+try:
+r = requests.post(webhook, json={"content": content}, timeout=10)
+print(f"DEBUG: Discord POST status {r.status_code}") # debug
+if r.status_code not in (200, 204):
+print(f"Discord responded {r.status_code}: {r.text[:300]}")
+else:
+print("Discord message sent successfully")
+except Exception as e:
+print("Failed to send to Discord:", e)
+
+----------------------------
+Helper formatting
+----------------------------
 
 def fmt(x):
-    """Format numbers consistently for display."""
-    if isinstance(x, (int, np.integer)):
-        return f"{x:,}"
-    try:
-        return f"{float(x):,.4f}"
-    except:
-        return str(x)
-
+if isinstance(x, (int, np.integer)):
+return f"{x:,}"
+try:
+return f"{float(x):,.4f}"
+except:
+return str(x)
 
 # ----------------------------
 # FETCH DATA
