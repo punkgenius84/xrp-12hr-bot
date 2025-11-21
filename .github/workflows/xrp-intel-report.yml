@@ -26,14 +26,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas ta requests feedparser
 
-      # Step 4: Run Crypto Intel
+      # Step 4: Run Crypto Intel (no CryptoPanic anymore)
       - name: Run Crypto Intel
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          CRYPTOPANIC_TOKEN: ${{ secrets.CRYPTOPANIC_TOKEN }}
         run: python combined_xrp_intel_report.py
 
-      # Step 6: Commit updated CSV if changed
+      # Step 5: Commit updated CSV if changed
       - name: Commit updated CSV if changed
         run: |
           git config --global user.name "github-actions[bot]"
@@ -45,4 +44,3 @@ jobs:
             git push origin main --force
           else
             echo "No changes in xrp_history.csv — skipping commit."
-          fi
