@@ -69,33 +69,49 @@ def fmt(x):
 # FETCH DATA
 # ----------------------------
 def fetch_30d_hourly():
-    """Return a DataFrame with 30 days of hourly OHLC-like rows from CoinGecko."""
+    """Fetch 30-day hourly XRP data from CoinGecko. Falls back to CSV if API fails."""
     url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart"
     params = {"vs_currency": "usd", "days": "30", "interval": "hourly"}
+    
     try:
-        resp = requests.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        prices = data.get("prices", [])
+        vols = data.get("total_volumes", [])
+        if not prices or not vols:
+            raise ValueError("Empty data from CoinGecko")
+        
+        df_p = pd.DataFrame(prices, columns=["timestamp_ms", "close"])
+        df_v = pd.DataFrame(vols, columns=["timestamp_ms", "volume"])
+        df_p["timestamp"] = pd.to_datetime(df_p["timestamp_ms"], unit="ms", utc=True)
+        df_v["timestamp"] = pd.to_datetime(df_v["timestamp_ms"], unit="ms", utc=True)
+        df = pd.merge(df_p[["timestamp", "close"]], df_v[["timestamp", "volume"]], on="timestamp", how="left")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        df["high"] = df["close"]
+        df["low"] = df["close"]
+        return df
+
     except Exception as e:
         print("Fetch error (30d hourly):", e)
-        return None
+        print("Falling back to CSV history...")
+        # fallback
+        try:
+            hist = pd.read_csv(CSV_FILE)
+            hist["timestamp"] = pd.to_datetime(hist["timestamp"], utc=True)
+            return hist
+        except Exception as e2:
+            print("CSV fallback failed:", e2)
+            # As a last resort, return a minimal fake DF
+            now = datetime.utcnow()
+            return pd.DataFrame({
+                "timestamp": [now],
+                "close": [1.0],
+                "high": [1.0],
+                "low": [1.0],
+                "volume": [0]
+            })
 
-    prices = data.get("prices", [])
-    vols = data.get("total_volumes", [])
-    if not prices or not vols:
-        print("Invalid market_chart payload")
-        return None
-
-    df_p = pd.DataFrame(prices, columns=["timestamp_ms", "close"])
-    df_v = pd.DataFrame(vols, columns=["timestamp_ms", "volume"])
-    df_p["timestamp"] = pd.to_datetime(df_p["timestamp_ms"], unit="ms", utc=True)
-    df_v["timestamp"] = pd.to_datetime(df_v["timestamp_ms"], unit="ms", utc=True)
-
-    df = pd.merge(df_p[["timestamp", "close"]], df_v[["timestamp", "volume"]], on="timestamp", how="left")
-    df = df.sort_values("timestamp").reset_index(drop=True)
-    df["high"] = df["close"]
-    df["low"] = df["close"]
-    return df
 
 
 def fetch_live_price():
