@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-XRP Report Bot - Fully working November 2025
-CryptoCompare data + bulletproof CSV handling
+XRP Combined Intel Report – Full Featured + Beautiful Discord Output
+Works perfectly in GitHub Actions (Nov 2025)
 """
 
 import os
@@ -14,30 +14,25 @@ from datetime import datetime
 
 # ---------------------------- CONFIG ----------------------------
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
-if DISCORD_WEBHOOK:
-    print("DEBUG: Webhook loaded")
-else:
-    print("DEBUG: No webhook")
-
 CSV_FILE = "xrp_history.csv"
 
 # ---------------------------- HELPERS ----------------------------
 def fmt(x):
-    return f"{float(x):,.4f}".rstrip("0").rstrip(".")
+    return f"{float(x):,.4f}".rstrip("0").rstrip(".") if isinstance(x, float) else str(x)
 
 def send_discord(msg):
     if not DISCORD_WEBHOOK:
-        print("DRY RUN:\n" + msg[:1000])
+        print("DRY RUN:\n" + msg)
         return
     try:
         r = requests.post(DISCORD_WEBHOOK, json={"content": msg}, timeout=10)
-        print(f"Discord response: {r.status_code}")
+        print(f"Discord → {r.status_code}")
     except Exception as e:
         print("Send failed:", e)
 
 # ---------------------------- DATA ----------------------------
 def fetch_xrp_hourly_data() -> pd.DataFrame:
-    print("Fetching XRP hourly data from CryptoCompare...")
+    print("Fetching XRP/USDT hourly data from CryptoCompare...")
     url = "https://min-api.cryptocompare.com/data/v2/histohour"
     params = {"fsym": "XRP", "tsym": "USDT", "limit": 2000}
     resp = requests.get(url, params=params, timeout=20)
@@ -47,105 +42,149 @@ def fetch_xrp_hourly_data() -> pd.DataFrame:
     df["open_time"] = pd.to_datetime(df["time"], unit="s")
     df = df.rename(columns={"volumeto": "volume"})
     df = df[["open_time", "open", "high", "low", "close", "volume"]]
-    print(f"Fetched {len(df)} candles")
+    print(f"Fetched {len(df)} hourly candles")
     return df
 
 # ---------------------------- INDICATORS ----------------------------
-def get_indicators(df):
+def compute_indicators(df):
     c = df["close"]
     rsi = RSIIndicator(c, window=14).rsi().iloc[-1]
-    macd = MACD(c)
+    macd = MACD(c, window_fast=12, window_slow=26, window_sign=9)
+    hist = macd.macd_diff()
     return {
         "rsi": rsi,
         "macd": macd.macd().iloc[-1],
         "signal": macd.macd_signal().iloc[-1],
+        "hist_trend": "Increasing 🟢" if hist.iloc[-1] > hist.iloc[-2] else "Decreasing 🔴",
         "ma50": c.rolling(50).mean().iloc[-1],
         "ma200": c.rolling(200).mean().iloc[-1],
     }
 
-def volume_text(df):
+def volume_spike(df):
     ratio = df["volume"].iloc[-1] / df["volume"].rolling(24).mean().iloc[-1]
     ratio = round(ratio, 2)
-    if ratio >= 1.5: return f"**EXTREME** {ratio}x 🔥"
-    if ratio >= 1.3: return f"**STRONG** {ratio}x ⚡"
-    if ratio >= 1.15: return f"Caution {ratio}x ⚠️"
-    return f"Normal {ratio}x"
+    if ratio >= 1.5: return f"**EXTREME SURGE** {ratio}x 🔥"
+    if ratio >= 1.3: return f"**Strong surge** {ratio}x ⚡"
+    if ratio >= 1.15: return f"Caution — elevated {ratio}x ⚠️"
+    return "No surge"
+
+def dynamic_levels(df):
+    high = df["high"].tail(72).max()   # ~3 days
+    low = df["low"].tail(72).min()
+    r = high - low
+    return {
+        "breakout_weak": low + r * 0.4,
+        "breakout_strong": low + r * 0.7,
+        "breakdown_weak": low + r * 0.3,
+        "breakdown_strong": low + r * 0.15,
+        "danger": low
+    }
+
+def flips_triggers(price, levels):
+    triggers = []
+    if price > levels["breakout_strong"]: triggers.append("🚀 Strong Bullish Breakout")
+    elif price > levels["breakout_weak"]: triggers.append("Bullish breakout (weak)")
+    if price < levels["breakdown_strong"]: triggers.append("💥 Strong Bearish Breakdown")
+    elif price < levels["breakdown_weak"]: triggers.append("Bearish breakdown (weak)")
+    if price < levels["danger"]: triggers.append("🚨 DANGER ZONE ACTIVE")
+    return ", ".join(triggers) if triggers else "None"
+
+def caution_level(price, vol_ratio, levels):
+    if vol_ratio >= 1.5 or price > levels["breakout_strong"] * 1.02 or price < levels["danger"]:
+        return "🚨 **DANGER ZONE** 🔴"
+    if vol_ratio >= 1.3 or price > levels["breakout_strong"]:
+        return "🟠 **Strong Caution**"
+    if vol_ratio >= 1.15:
+        return "🟡 Weak Caution"
+    return "✅ Safe levels"
 
 def get_news():
     try:
         f = feedparser.parse("https://cryptonews.com/news/rss/")
         return "\n".join(f"• {e.title}" for e in f.entries[:6])
     except:
-        return "• News unavailable"
+        return "• News temporarily unavailable"
 
 # ---------------------------- MESSAGE ----------------------------
-def build_message(df, price):
-    i = get_indicators(df)
-    h24 = df["high"].tail(24).max()
-    l24 = df["low"].tail(24).min()
+def build_message(df):
+    price = df["close"].iloc[-1]
+    i = compute_indicators(df)
+    vol_text = volume_spike(df)
+    vol_ratio = df["volume"].iloc[-1] / df["volume"].rolling(24).mean().iloc[-1]
+    levels = dynamic_levels(df)
+    triggers = flips_triggers(price, levels)
+    caution = caution_level(price, vol_ratio, levels)
+    high24 = df["high"].tail(24).max()
+    low24 = df["low"].tail(24).min()
 
     bull = 50
-    if price > i["ma50"]: bull += 18
-    if i["macd"] > i["signal"]: bull += 22
+    if price > i["ma50"]: bull += 15
+    if i["macd"] > i["signal"]: bull += 20
     if i["rsi"] < 30: bull += 10
+    elif i["rsi"] > 70: bull -= 15
     bull = min(100, max(0, bull))
+    bear = 100 - bull
 
     return f"""
-**🚨 XRP Intel Report — {datetime.utcnow().strftime('%b %d %H:%M UTC')}**
+**🚨 Combined XRP Intelligence Report — {datetime.utcnow().strftime('%b %d, %H:%M UTC')}**
 
-**Price:** `${fmt(price)}`  
-**24h Range:** `${fmt(h24)}` – `${fmt(l24)}`
+💰 **Current Price:** `${fmt(price)}`
+📈 **RSI (14):** `{fmt(i['rsi'])}`
+📉 **MACD:** `{fmt(i['macd'])}` (signal `{fmt(i['signal'])}`)
+📊 **MA50:** `{fmt(i['ma50'])}`  **MA200:** `{fmt(i['ma200'])}`
 
-**Indicators**
-• RSI (14): `{fmt(i['rsi'])}`
-• MACD: `{fmt(i['macd'])}` | Signal: `{fmt(i['signal'])}`
-• MA50: `{fmt(i['ma50'])}` | MA200: `{fmt(i['ma200'])}`
-• Volume: {volume_text(df)}
+📈 **Bullish Probability:** `{bull}%`
+📉 **Bearish Probability:** `{bear}%`
+🔍 **Trend:** `{'Bullish 🟢' if bull > bear else 'Bearish 🔴'}`
 
-**Trend:** {'🟢 Bullish' if bull > 50 else '🔴 Bearish'} ({bull}% confidence)
+📊 **Volume Signals:** {vol_text}
+📊 **MACD Histogram Trend:** {i['hist_trend']}
+🧭 **Support/Resistance:** 24h High: `${fmt(high24)}`, 24h Low: `${fmt(low24)}`
 
-**News**
+📌 **Dynamic Levels**
+• Breakout weak: `${fmt(levels['breakout_weak'])}`
+• Breakout strong: `${fmt(levels['breakout_strong'])}`
+• Breakdown weak: `${fmt(levels['breakdown_weak'])}`
+• Breakdown strong: `${fmt(levels['breakdown_strong'])}`
+• Danger level: `${fmt(levels['danger'])}`
+
+🔔 **Flips/Triggers:** {triggers}
+**⚠️ Caution Level:** {caution}
+
+**📰 Top Crypto News**
 {get_news()}
 
-*Auto-updated • {len(df)} hourly candles*
+*Auto-updated via GitHub Actions • {len(df)} hourly candles*
     """.strip()
 
-# ---------------------------- MAIN (NO MORE parse_dates CRASH) ----------------------------
+# ---------------------------- MAIN ----------------------------
 def main():
     fresh_df = fetch_xrp_hourly_data()
 
-    # Load old CSV safely – NO parse_dates argument!
+    # Safe CSV load
     if os.path.exists(CSV_FILE):
         try:
-            old_df = pd.read_csv(CSV_FILE)  # ← THIS LINE CHANGED
+            old_df = pd.read_csv(CSV_FILE)
             if "open_time" in old_df.columns:
                 old_df["open_time"] = pd.to_datetime(old_df["open_time"])
-                print(f"Loaded {len(old_df)} old rows")
             else:
-                print("Old CSV wrong format → ignoring")
                 old_df = pd.DataFrame()
-        except Exception as e:
-            print(f"CSV error ({e}) → starting fresh")
+        except:
             old_df = pd.DataFrame()
     else:
         old_df = pd.DataFrame()
-        print("No CSV found → starting fresh")
 
     # Merge
-    if not old_df.empty:
-        df = pd.concat([old_df, fresh_df]).drop_duplicates(subset="open_time").sort_values("open_time").reset_index(drop=True)
-    else:
-        df = fresh_df
-
+    df = pd.concat([old_df, fresh_df]).drop_duplicates(subset="open_time").sort_values("open_time").reset_index(drop=True)
     df.to_csv(CSV_FILE, index=False)
-    print(f"Saved {len(df)} rows to CSV")
+    print(f"Updated CSV → {len(df)} rows")
 
-    if len(df) < 250:
+    if len(df) < 300:
         print("Not enough data yet")
         return
 
-    send_discord(build_message(df, df["close"].iloc[-1]))
-    print("Report sent!")
+    send_discord(build_message(df))
+    print("Full report sent!")
 
 if __name__ == "__main__":
     main()
