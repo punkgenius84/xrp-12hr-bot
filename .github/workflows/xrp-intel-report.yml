@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '0 8,12,18,21 * * *'  # 8am, 12pm, 6pm, 9pm UTC
+    - cron: '0 8,12,18,21 * * *'
   workflow_dispatch:
 
 jobs:
@@ -33,7 +33,9 @@ jobs:
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
-        run: python combined_xrp_intel_report.py
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+        run: |
+          python combined_xrp_intel_report.py
 
       - name: Commit updated CSV if changed
         run: |
