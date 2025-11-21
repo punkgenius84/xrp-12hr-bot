@@ -9,6 +9,8 @@ Combined Crypto Intel + XRP 12-Hour Report
 - Updates xrp_history.csv automatically
 - Dynamic caution/strong/danger levels
 """
+from dotenv import load_dotenv
+load_dotenv()
 
 import os
 import time
