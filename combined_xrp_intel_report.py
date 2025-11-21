@@ -28,6 +28,8 @@ X_API_SECRET = os.getenv("X_API_SECRET")
 X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
 X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
 
+print(f"API_KEY: {'YES' if X_API_KEY else 'NO'} | SECRET: {'YES' if X_API_SECRET else 'NO'} | TOKEN: {'YES' if X_ACCESS_TOKEN else 'NO'} | TOKEN_SECRET: {'YES' if X_ACCESS_SECRET else 'NO'}")
+
 CSV_FILE = "xrp_history.csv"
 
 # ========================= HELPERS =========================
