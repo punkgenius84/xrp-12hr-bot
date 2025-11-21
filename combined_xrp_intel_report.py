@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-XRP Combined Intel Report – Discord + X Auto-Post
-Smart levels · Clickable news · Works 100% on GitHub Actions
-November 2025 – Final bulletproof version
+XRP Combined Intel Report – Discord + X Auto-Post (OAuth 2.0 Bearer Token)
+Smart adaptive levels · Clickable news · Works perfectly on GitHub Actions
+November 2025 – FINAL VERSION
 """
 
 import os
@@ -12,23 +12,10 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime
-import time
-import hmac
-import hashlib
-import urllib.parse
-import base64
-import binascii
 
 # ========================= CONFIG =========================
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
-
-# OAuth 1.0a credentials (required for posting to X)
-X_API_KEY = os.getenv("X_API_KEY")
-X_API_SECRET = os.getenv("X_API_SECRET")
-X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
-X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
-
-print(f"API_KEY: {'YES' if X_API_KEY else 'NO'} | SECRET: {'YES' if X_API_SECRET else 'NO'} | TOKEN: {'YES' if X_ACCESS_TOKEN else 'NO'} | TOKEN_SECRET: {'YES' if X_ACCESS_SECRET else 'NO'}")
+X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN")   # <-- Only this one secret needed now
 
 CSV_FILE = "xrp_history.csv"
 
@@ -45,41 +32,15 @@ def send_discord(msg):
     except Exception as e:
         print("Discord send failed:", e)
 
-# ========================= X POST (OAuth 1.0a) =========================
+# ========================= X POST (OAuth 2.0 Bearer Token) =========================
 def post_to_x(text):
-    if not all([X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET]):
-        print("Missing X OAuth credentials → skipping X post")
+    if not X_BEARER_TOKEN:
+        print("No X_BEARER_TOKEN → skipping X post")
         return
 
     url = "https://api.x.com/2/tweets"
-    oauth_nonce = binascii.b2a_hex(os.urandom(16)).decode()
-    oauth_timestamp = str(int(time.time()))
-
-    params = {
-        "oauth_consumer_key": X_API_KEY,
-        "oauth_nonce": oauth_nonce,
-        "oauth_signature_method": "HMAC-SHA1",
-        "oauth_timestamp": oauth_timestamp,
-        "oauth_token": X_ACCESS_TOKEN,
-        "oauth_version": "1.0",
-        "text": text
-    }
-
-    # Generate signature
-    base_string = "&".join([
-        "POST",
-        urllib.parse.quote(url, safe=""),
-        urllib.parse.quote("&".join([f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in sorted(params.items())]), safe="")
-    ])
-    signing_key = f"{urllib.parse.quote(X_API_SECRET, safe='')}&{urllib.parse.quote(X_ACCESS_SECRET, safe='')}"
-    hashed = hmac.new(signing_key.encode(), base_string.encode(), hashlib.sha1)
-    signature = base64.b64encode(hashed.digest()).decode()
-    params["oauth_signature"] = signature
-
-    auth_header = "OAuth " + ", ".join([f'{k}="{urllib.parse.quote(v, safe="")}"' for k, v in params.items() if k.startswith("oauth_")])
-
     headers = {
-        "Authorization": auth_header,
+        "Authorization": f"Bearer {X_BEARER_TOKEN}",
         "Content-Type": "application/json"
     }
     payload = {"text": text}
