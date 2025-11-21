@@ -1,4 +1,6 @@
 name: Combined XRP + Crypto Intel Report
+permissions:
+  contents: write
 
 on:
   schedule:
