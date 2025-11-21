@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4   # updated to latest
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -33,6 +33,7 @@ jobs:
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}   # <---- ADDED
         run: python combined_xrp_intel_report.py
 
       - name: Commit updated CSV if changed
@@ -47,4 +48,3 @@ jobs:
             git push origin main --force
           else
             echo "No changes in xrp_history.csv — skipping commit."
-          fi
