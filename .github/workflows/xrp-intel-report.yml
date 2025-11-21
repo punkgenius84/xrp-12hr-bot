@@ -31,13 +31,7 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           CRYPTOPANIC_TOKEN: ${{ secrets.CRYPTOPANIC_TOKEN }}
-        run: python crypto-intel.py
-
-      # Step 5: Run XRP Report
-      - name: Run XRP Report
-        env:
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-        run: python xrp_report.py
+        run: python combined_xrp_intel_report.py
 
       # Step 6: Commit updated CSV if changed
       - name: Commit updated CSV if changed
