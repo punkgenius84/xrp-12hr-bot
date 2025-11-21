@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '0 8,12,18,21 * * *'  # 8am, 12pm, 6pm, 9pm UTC
+    - cron: '0 8,12,18,21 * * *'   # 8am, 12pm, 6pm, 9pm UTC
   workflow_dispatch:
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
-          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}   # <---- ADDED
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}     # NEW
         run: python combined_xrp_intel_report.py
 
       - name: Commit updated CSV if changed
@@ -41,6 +41,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add xrp_history.csv
+
           if ! git diff --cached --quiet; then
             echo "Changes detected — committing CSV update..."
             git commit -m "Update XRP history CSV [skip ci]"
@@ -48,3 +49,4 @@ jobs:
             git push origin main --force
           else
             echo "No changes in xrp_history.csv — skipping commit."
+          fi
