@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-XRP Combined Intel Report – With Clickable News + Thumbnails
-Perfect for Discord (auto-previews!)
+XRP Combined Intel Report – Smart Adaptive Dynamic Levels (Nov 2025)
+Now handles crashes and pumps perfectly
 """
 
 import os
@@ -47,11 +47,12 @@ def compute_indicators(df):
     rsi = RSIIndicator(c, window=14).rsi().iloc[-1]
     macd = MACD(c, window_fast=12, window_slow=26, window_sign=9)
     hist = macd.macd_diff()
+    trend = "Increasing 🟢" if len(hist) > 1 and hist.iloc[-1] > hist.iloc[-2] else "Decreasing 🔴"
     return {
         "rsi": rsi,
         "macd": macd.macd().iloc[-1],
         "signal": macd.macd_signal().iloc[-1],
-        "hist_trend": "Increasing 🟢" if len(hist) > 1 and hist.iloc[-1] > hist.iloc[-2] else "Decreasing 🔴",
+        "hist_trend": trend,
         "ma50": c.rolling(50).mean().iloc[-1],
         "ma200": c.rolling(200).mean().iloc[-1],
     }
@@ -64,16 +65,40 @@ def volume_spike(df):
     if ratio >= 1.15: return f"Caution — elevated {ratio}x ⚠️"
     return "No surge"
 
+# ================================
+# SMART ADAPTIVE DYNAMIC LEVELS
+# ================================
 def dynamic_levels(df):
-    high = df["high"].tail(72).max()
-    low = df["low"].tail(72).min()
+    price = df["close"].iloc[-1]
+    recent_high = df["high"].tail(24).max()
+    recent_low  = df["low"].tail(24).min()
+    weekly_high = df["high"].tail(168).max()  # 7 days
+    weekly_low  = df["low"].tail(168).min()
+
+    drop_from_week = (weekly_high - price) / weekly_high if weekly_high > 0 else 0
+    range_mode = "7-day"
+
+    if drop_from_week > 0.10:  # violent sell-off → use only recent swing
+        high = recent_high
+        low  = recent_low
+        range_mode = "24h crash mode"
+        print("DEBUG: Crash detected → using 24h range for levels")
+    else:
+        high = weekly_high
+        low  = weekly_low
+
     r = high - low
+    if r <= 0: r = 0.0001
+
     return {
-        "breakout_weak": low + r * 0.4,
-        "breakout_strong": low + r * 0.7,
-        "breakdown_weak": low + r * 0.3,
-        "breakdown_strong": low + r * 0.15,
-        "danger": low
+        "breakout_weak":    low + r * 0.382,
+        "breakout_strong":  low + r * 0.618,
+        "breakdown_weak":   low + r * 0.236,
+        "breakdown_strong": low + r * 0.118,
+        "danger":           low,
+        "range_high":       high,
+        "range_low":        low,
+        "range_mode":       range_mode
     }
 
 def flips_triggers(price, levels):
@@ -94,26 +119,19 @@ def caution_level(price, vol_ratio, levels):
         return "🟡 Weak Caution"
     return "✅ Safe levels"
 
-# ================================
-# BEAUTIFUL CLICKABLE NEWS WITH THUMBNAILS
-# ================================
 def get_news_section():
     try:
         feed = feedparser.parse("https://cryptonews.com/news/rss/")
-        news_lines = []
-        for entry in feed.entries[:5]:  # top 5 stories
-            title = entry.title.strip()
-            link = entry.link.strip()
-            # Discord will auto-unfurl the preview (with thumbnail!) if we just send the URL on its own line
-            news_lines.append(f"**{title}**\n{link}\n")
-        return "\n".join(news_lines) if news_lines else "No recent news"
+        lines = []
+        for e in feed.entries[:5]:
+            title = e.title.strip().replace("`", "'")
+            link = e.link.strip()
+            lines.append(f"**{title}**\n{link}\n")
+        return "\n".join(lines) or "No news right now"
     except Exception as e:
-        print("News fetch failed:", e)
+        print("News error:", e)
         return "News temporarily unavailable"
 
-# ================================
-# MESSAGE
-# ================================
 def build_message(df):
     price = df["close"].iloc[-1]
     i = compute_indicators(df)
@@ -149,7 +167,7 @@ def build_message(df):
 📊 **MACD Histogram Trend:** {i['hist_trend']}
 🧭 **24h High/Low:** `${fmt(high24)}` / `${fmt(low24)}`
 
-📌 **Dynamic Levels**
+📌 **Dynamic Levels** ({levels['range_mode']})
 • Breakout weak: `${fmt(levels['breakout_weak'])}`
 • Breakout strong: `${fmt(levels['breakout_strong'])}`
 • Breakdown weak: `${fmt(levels['breakdown_weak'])}`
@@ -159,19 +177,15 @@ def build_message(df):
 🔔 **Flips/Triggers:** {triggers}
 **⚠️ Caution Level:** {caution}
 
-**📰 Latest XRP & Crypto News** (click title for full article + preview)
+**📰 Latest XRP & Crypto News** (click for full article + preview)
 {get_news_section()}
 
 *Auto-updated via GitHub Actions • {len(df)} hourly candles*
     """.strip()
 
-# ================================
-# MAIN
-# ================================
 def main():
     fresh_df = fetch_xrp_hourly_data()
 
-    # Safe CSV handling
     old_df = pd.DataFrame()
     if os.path.exists(CSV_FILE):
         try:
@@ -188,11 +202,11 @@ def main():
     print(f"Updated CSV → {len(df)} rows")
 
     if len(df) < 300:
-        print("Not enough data yet")
+        print("Not enough data")
         return
 
     send_discord(build_message(df))
-    print("Beautiful report with clickable news sent!")
+    print("Smart report sent!")
 
 if __name__ == "__main__":
     main()
