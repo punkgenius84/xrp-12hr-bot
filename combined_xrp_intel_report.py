@@ -34,7 +34,7 @@ try:
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK"]
 print("DEBUG: DISCORD_WEBHOOK loaded successfully")
 except KeyError:
-DISCORD_WEBHOOK = https://discord.com/api/webhooks/1439145854899589141/s5vTSsu_z-Wx1HxgV1C-pSt3LO9jo_brrsoFbXRoBfjlcxD1Ut7tFC_6TlpicqC8P6HY
+DISCORD_WEBHOOK = None
 print("DEBUG: DISCORD_WEBHOOK not found in environment!")
 
 CSV_FILE = "xrp_history.csv"
