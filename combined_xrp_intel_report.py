@@ -25,6 +25,7 @@ print("DISCORD_WEBHOOK:", DISCORD_WEBHOOK)
 # CONFIG
 # ----------------------------
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
+print("DEBUG: DISCORD_WEBHOOK =", DISCORD_WEBHOOK)
 CSV_FILE = "xrp_history.csv"
 
 VOLUME_SPIKE_LEVELS = {"caution": 1.15, "strong": 1.30, "extreme": 1.50}
