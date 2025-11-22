@@ -228,6 +228,7 @@ def build_x_teaser(df):
 🔥 {main_trigger}
 
 Full report in my Discord 👇
+https://discord.gg/HD8PdbW2
 #XRP #Ripple #Crypto"""
 
 # ========================= MAIN =========================
