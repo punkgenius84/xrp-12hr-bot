@@ -4,8 +4,11 @@ permissions:
   contents: write
 
 on:
+  # Standard scheduled alerts
   schedule:
-    - cron: '0 8,12,14,18,21 * * *'
+    - cron: '0 8,12,14,18,21 * * *'  # 8am, 12pm, 2pm, 6pm, 9pm UTC
+    # Rapid monitoring (5-minute checks), throttled internally
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -49,4 +52,3 @@ jobs:
             git push origin main --force
           else
             echo "No changes in xrp_history.csv — skipping commit."
-          fi
