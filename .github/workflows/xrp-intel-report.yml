@@ -2,7 +2,7 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # every 15 min (consider removing if too frequent to avoid rate limits)
+    - cron: '*/15 * * * *'   # every 15 min (remove if too aggressive for API limits)
     - cron: '0 * * * *'      # hourly
     - cron: '0 0 * * *'      # daily midnight
   workflow_dispatch:
@@ -24,11 +24,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      # ← CORRECT PACKAGE: installs smartmoneyconcepts, which provides 'import smc'
+      # ← FIXED DEPENDENCIES: Pin pandas/numpy first, then smc (handles ICT imports)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas requests discord-webhook tweepy==4.14.0 smartmoneyconcepts
+          pip install pandas>=2.0 numpy>=1.24 requests discord-webhook tweepy==4.14.0
+          pip install smartmoneyconcepts==0.0.26
 
       - name: Run XRP Intel Script
         env:
@@ -40,24 +41,24 @@ jobs:
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
         run: python combined_xrp_intel_report.py
 
-      # Bulletproof CSV push (handles concurrent runs without conflicts)
+      # Bulletproof CSV push (zero conflicts, even concurrent)
       - name: Commit and push updated CSV (conflict-proof)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add xrp_history.csv || echo "CSV file not found yet — creating on next run"
+          git add xrp_history.csv || echo "CSV not found yet — will create on next data run"
 
           if git diff --cached --quiet; then
-            echo "No changes to xrp_history.csv – skipping commit."
+            echo "No changes to xrp_history.csv – skipping."
             exit 0
           fi
 
-          echo "New data detected – ensuring latest version..."
+          echo "Pushing latest CSV data..."
           git fetch origin main
-          git checkout origin/main -- xrp_history.csv || echo "No remote CSV yet"
+          git checkout origin/main -- xrp_history.csv || true  # Ignore if no remote file
           git add xrp_history.csv
           git commit -m "Update XRP history CSV [skip ci]"
           git push origin main --force-with-lease
 
-          echo "CSV updated and pushed successfully!"
+          echo "CSV push complete!"
