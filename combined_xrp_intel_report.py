@@ -12,8 +12,7 @@ Combined Crypto Intel + XRP 12-Hour Report
 
 import requests
 import pandas as pd
-import smc  # SmartMoneyConcepts library
-import os
+from smartmoneyconcepts import smc  # SmartMoneyConcepts libraryimport os
 from datetime import datetime, timedelta
 
 CSV_FILE = "xrp_history.csv"
