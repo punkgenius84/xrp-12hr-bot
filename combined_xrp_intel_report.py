@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-XRP AI BOT — FINAL VERSION WITH EVERYTHING RESTORED (Nov 26 2025)
+XRP AI BOT — FINAL WITH ORIGINAL NEWS EMBEDS (clickable + previews)
 """
 
 import requests
@@ -23,7 +23,7 @@ client = tweepy.Client(
 )
 
 # -----------------------------
-# Data Fetch + Load
+# Data + CSV (unchanged)
 # -----------------------------
 def fetch_xrp_hourly_data():
     print("Fetching XRP/USDT hourly from CryptoCompare...")
@@ -45,7 +45,7 @@ def load_csv():
         return pd.DataFrame()
 
 # -----------------------------
-# Pure pandas swings (stable)
+# Pure pandas swings
 # -----------------------------
 def find_swings(df, window=50):
     high_roll = df['high'].rolling(window=2*window+1, center=True).max()
@@ -56,7 +56,7 @@ def find_swings(df, window=50):
     return swings
 
 # -----------------------------
-# Market Structure (working)
+# Market Structure
 # -----------------------------
 def compute_market_structure(df):
     try:
@@ -82,7 +82,7 @@ def compute_market_structure(df):
         return "Unavailable"
 
 # -----------------------------
-# Your original indicators
+# Indicators (your original)
 # -----------------------------
 def check_macd_rsi_alerts(df):
     df['ema12'] = df['close'].ewm(span=12).mean()
@@ -121,32 +121,42 @@ def detect_chart_patterns(df):
     return "\n".join(signals) if signals else "Neutral"
 
 # -----------------------------
-# News — ONLY XRP, BTC, SEC (your original filter)
+# News — CLICKABLE EMBEDS WITH PREVIEWS (your original style)
 # -----------------------------
-def get_xrp_news():
+def send_news_embeds():
     try:
         url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=XRP,BTC,SEC"
         resp = requests.get(url, timeout=10)
         articles = resp.json()["Data"][:5]
 
-        lines = []
+        webhook = DiscordWebhook(url=DISCORD_WEBHOOK)
+
         for a in articles:
             title = a['title']
-            if any(kw in title.lower() for kw in ["xrp", "ripple", "bitcoin", "btc", "sec", "lawsuit", "gensler", "regulation"]):
-                lines.append(f"• {title}")
+            body = a['body'][:200] + "..." if len(a['body']) > 200 else a['body']
+            link = a['url']
+            image = a.get('imageurl', '')
 
-        return "\n".join(lines) if lines else "No relevant XRP/BTC/SEC news"
+            embed = DiscordEmbed(title=title, description=body, color=0x9b59b6, url=link)
+            if image:
+                embed.set_image(url=image)
+            embed.set_footer(text="Click title to read full article")
+            embed.timestamp = datetime.utcfromtimestamp(a['published_on']).isoformat()
+
+            webhook.add_embed(embed)
+
+        if webhook.embeds:
+            webhook.execute()
+            print("News embeds sent!")
     except Exception as e:
         print("News failed:", e)
-        return "News unavailable"
 
 # -----------------------------
-# YOUR ORIGINAL GORGEOUS EMBED — 100% RESTORED + FIXED TIMESTAMP
+# Main Report Embed + News
 # -----------------------------
-def send_original_embed(structure, alerts, patterns):
+def send_main_report(structure, alerts, patterns):
     price = df['close'].iloc[-1]
     change_24h = ((price / df['close'].iloc[-25]) - 1) * 100 if len(df) > 25 else 0
-    news = get_xrp_news()
 
     embed = DiscordEmbed(title="Combined XRP Intelligence Report", color=0x9b59b6)
     embed.add_embed_field(name="**Market Structure**", value=structure, inline=False)
@@ -156,22 +166,24 @@ def send_original_embed(structure, alerts, patterns):
     embed.add_embed_field(name="**Patterns & Flips**", value=patterns or "Neutral", inline=False)
     embed.add_embed_field(name="**Flips / Triggers**", value="Strong Bullish Flip | Auto-post via GitHub Actions", inline=False)
     embed.add_embed_field(name="**Caution Level**", value="Strong Caution (24h High/Low)", inline=False)
-    embed.add_embed_field(name="**News**", value=news, inline=False)
     embed.set_thumbnail(url="https://cryptologos.cc/logos/xrp-xrp-logo.png")
     embed.set_footer(text=f"Data: {len(df)} hourly candles • Updated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    embed.timestamp = datetime.utcnow().isoformat()  # ← Fixed
+    embed.timestamp = datetime.utcnow().isoformat()
 
     webhook = DiscordWebhook(url=DISCORD_WEBHOOK)
     webhook.add_embed(embed)
     webhook.execute()
-    print("Original embed sent to Discord!")
+    print("Main report sent!")
+
+    # Send news as separate clickable cards
+    send_news_embeds()
 
     # X post
     try:
         client.create_tweet(text=f"XRP Update: {structure} | ${price:.4f} ({change_24h:+.2f}%) #XRP #Crypto")
         print("X post sent!")
     except Exception as e:
-        print("X post failed:", e)
+        print("X failed:", e)
 
 # -----------------------------
 # Main
@@ -190,7 +202,7 @@ def main():
     patterns = detect_chart_patterns(df)
 
     print("Market Structure:", structure)
-    send_original_embed(structure, alerts, patterns)
+    send_main_report(structure, alerts, patterns)
 
 if __name__ == "__main__":
     main()
