@@ -14,33 +14,20 @@ jobs:
   run-report:
     runs-on: ubuntu-latest
     steps:
-      # -----------------------------
-      # Checkout repository
-      # -----------------------------
       - name: Checkout Repo
         uses: actions/checkout@v3
-        with:
-          persist-credentials: true  # ensures git push uses GITHUB_TOKEN
+        
 
-      # -----------------------------
-      # Set up Python
-      # -----------------------------
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
 
-      # -----------------------------
-      # Install dependencies
-      # -----------------------------
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pandas requests smc
 
-      # -----------------------------
-      # Run the Python script
-      # -----------------------------
       - name: Run XRP Intel Script
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
@@ -51,10 +38,9 @@ jobs:
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
         run: python combined_xrp_intel_report.py
 
-      # -----------------------------
-      # Commit updated CSV if changed
-      # -----------------------------
       - name: Commit updated CSV if changed
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -62,7 +48,7 @@ jobs:
           if ! git diff-index --quiet HEAD; then
             echo "Changes detected — committing CSV update..."
             git commit -m "Update XRP history CSV [skip ci]"
-            git push origin HEAD:main
+            git push https://x-access-token:${GH_PAT}@github.com/${{ github.repository }} HEAD:main
           else
             echo "No changes in xrp_history.csv — skipping commit."
           fi
