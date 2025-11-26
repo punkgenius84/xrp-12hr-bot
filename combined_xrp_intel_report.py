@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 XRP AI BOT — FINAL PERFECTION (Nov 26 2025)
-Your original embed + clickable news + MAX-info X post
+Your original embed + clickable news + MAX-info X post + working market structure
 """
 
 import requests
@@ -24,7 +24,7 @@ client = tweepy.Client(
 )
 
 # -----------------------------
-# Data + CSV
+# Data Fetch + Load
 # -----------------------------
 def fetch_xrp_hourly_data():
     print("Fetching XRP/USDT hourly from CryptoCompare...")
@@ -46,7 +46,7 @@ def load_csv():
         return pd.DataFrame()
 
 # -----------------------------
-# Pure pandas swings
+# Pure pandas swings (100% stable)
 # -----------------------------
 def find_swings(df, window=50):
     high_roll = df['high'].rolling(window=2*window+1, center=True).max()
@@ -57,7 +57,7 @@ def find_swings(df, window=50):
     return swings
 
 # -----------------------------
-# Market Structure
+# Market Structure (working)
 # -----------------------------
 def compute_market_structure(df):
     try:
@@ -83,7 +83,7 @@ def compute_market_structure(df):
         return "Unavailable"
 
 # -----------------------------
-# Original Indicators
+# Your original indicators
 # -----------------------------
 def check_macd_rsi_alerts(df):
     df['ema12'] = df['close'].ewm(span=12).mean()
@@ -122,30 +122,25 @@ def detect_chart_patterns(df):
     return "\n".join(signals) if signals else "Neutral"
 
 # -----------------------------
-# News — CLICKABLE CARDS (your original style)
+# Clickable News Cards
 # -----------------------------
 def send_news_embeds():
     try:
         url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=XRP,BTC,SEC"
         resp = requests.get(url, timeout=10)
         articles = resp.json()["Data"][:5]
-
         webhook = DiscordWebhook(url=DISCORD_WEBHOOK)
-
         for a in articles:
             title = a['title']
             body = a['body'][:200] + "..." if len(a['body']) > 200 else a['body']
             link = a['url']
             image = a.get('imageurl', '')
-
             embed = DiscordEmbed(title=title, description=body, color=0x9b59b6, url=link)
             if image:
                 embed.set_image(url=image)
             embed.set_footer(text="Click title to read full article")
             embed.timestamp = datetime.utcfromtimestamp(a['published_on']).isoformat()
-
             webhook.add_embed(embed)
-
         if webhook.embeds:
             webhook.execute()
             print("News embeds sent!")
@@ -153,25 +148,23 @@ def send_news_embeds():
         print("News failed:", e)
 
 # -----------------------------
-# MAX-INFO X POST (~250 chars)
+# MAX-INFO X POST (250 chars) — FIXED
 # -----------------------------
-def post_to_x():
+def post_to_x(structure, alerts, patterns):
     try:
         price = df['close'].iloc[-1]
         change_24h = ((price / df['close'].iloc[-25]) - 1) * 100 if len(df) > 25 else 0
         change_7d = ((price / df['close'].iloc[-169]) - 1) * 100 if len(df) > 169 else 0
-
-        vol_spike = "VOL↑" if df['volume'].iloc[-1] > df['volume'].tail(50).mean() * 2 else "Vol"
+        vol = "VOL↑" if df['volume'].iloc[-1] > df['volume'].tail(50).mean() * 2 else "Vol"
         rsi = int(100 - (100 / (1 + (df['close'].diff(1).clip(lower=0).rolling(14).mean() /
                                     abs(df['close'].diff(1)).rolling(14).mean()))).iloc[-1])
         rsi_tag = f" RSI{rsi}" if rsi > 70 or rsi < 30 else ""
-
         macd = "MACD↑" if "Bullish Crossover" in alerts else "MACD↓" if "Bearish Crossover" in alerts else ""
 
         tweet = f"""XRP Intel Drop
 ${price:.4f} | 24h: {change_24h:+.2f}% | 7d: {change_7d:+.2f}%
 {structure}
-{vol_spike} {macd}{rsi_tag} {patterns.split()[0] if "Neutral" not in patterns else "Neutral"}
+{vol} {macd}{rsi_tag} {patterns.split()[0] if "Neutral" not in patterns else "Neutral"}
 #XRP #Crypto"""
 
         client.create_tweet(text=tweet)
@@ -180,7 +173,7 @@ ${price:.4f} | 24h: {change_24h:+.2f}% | 7d: {change_7d:+.2f}%
         print("X post failed:", e)
 
 # -----------------------------
-# Main Report + News + X Post
+# Your Original Beautiful Embed + News + X Post
 # -----------------------------
 def send_main_report(structure, alerts, patterns):
     price = df['close'].iloc[-1]
@@ -203,9 +196,8 @@ def send_main_report(structure, alerts, patterns):
     webhook.execute()
     print("Main report sent!")
 
-    # News cards + X post
     send_news_embeds()
-    post_to_x(structure, prob, alerts)  # ← FIXED: pass alerts
+    post_to_x(structure, alerts, patterns)
 
 # -----------------------------
 # Main
