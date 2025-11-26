@@ -1,54 +1,45 @@
-name: Combined XRP + Crypto Intel Report
-
-permissions:
-  contents: write
+name: XRP Combined Intel Report
 
 on:
-  # Standard scheduled alerts
   schedule:
-    - cron: '0 8,12,14,18,21 * * *'  # 8am, 12pm, 2pm, 6pm, 9pm UTC
-    # Rapid monitoring (5-minute checks), throttled internally
-    - cron: '*/5 * * * *'
-  workflow_dispatch:
+    # Runs every 15 minutes for short-term alerts
+    - cron: '*/15 * * * *'
+    # Runs hourly for 1H alerts
+    - cron: '0 * * * *'
+    # Runs daily at 00:00 UTC for 24H report
+    - cron: '0 0 * * *'
+  workflow_dispatch: # allows manual trigger
 
 jobs:
-  run-reports:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pandas ta requests feedparser requests-oauthlib smartmoneyconcepts
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas ta feedparser requests_oauthlib smartmoneyconcepts
 
-      - name: Run XRP Report (Discord + X Post)
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          X_API_KEY: ${{ secrets.X_API_KEY }}
-          X_API_SECRET: ${{ secrets.X_API_SECRET }}
-          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
-          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
-          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
-        run: python combined_xrp_intel_report.py
+    - name: Run XRP Intel Report
+      run: |
+        python combined_xrp_intel_report.py
 
-      - name: Commit updated CSV if changed
-        shell: bash
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add xrp_history.csv
-          if ! git diff --cached --quiet; then
-            echo "Changes detected — committing CSV update..."
-            git commit -m "Update XRP history CSV [skip ci]"
-            git pull --rebase origin main || true
-            git push origin main --force
-          else
-            echo "No changes in xrp_history.csv — skipping commit."
+    - name: Commit CSV Changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add xrp_history.csv
+        git diff-index --quiet HEAD || git commit -m "Update XRP history CSV [skip ci]"
+        git push
+
+    - name: Throttle Sleep
+      # Prevent hitting API too many requests in quick succession
+      run: sleep 10
