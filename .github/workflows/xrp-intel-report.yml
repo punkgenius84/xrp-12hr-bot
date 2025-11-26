@@ -2,17 +2,14 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    # 8:00 AM EST
+    # 8:00 AM EST → 13:00 UTC
     - cron: '0 13 * * *'
-    # 12:00 PM EST (noon)
+    # 12:00 PM EST → 17:00 UTC
     - cron: '0 17 * * *'
-    # 4:00 PM EST
+    # 4:00 PM EST → 21:00 UTC
     - cron: '0 21 * * *'
-    # 9:00 PM EST
-    - cron: '0 2 * * *'     # 2 AM UTC = 9 PM EST (previous day) / 10 PM EDT
-    # Optional: keep hourly and daily if you still want them
-    # - cron: '0 * * * *'   # every hour
-    # - cron: '0 0 * * *'   # midnight UTC
+    # 9:00 PM EST → 02:00 UTC (next day)
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 permissions:
@@ -55,12 +52,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Clean any leftover junk files
           rm -f "=1.24" "=2.0" 2>/dev/null || true
 
           git add xrp_history.csv || echo "No CSV yet"
 
           if git diff --cached --quiet; then
-            echo "No changes to xrp_history.csv – skipping commit."
+            echo "No changes to xrp_history.csv – nothing to commit."
             exit 0
           fi
 
