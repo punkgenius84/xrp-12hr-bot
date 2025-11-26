@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-XRP AI BOT — FINAL WITH YOUR ORIGINAL EMBED + WORKING MARKET STRUCTURE
+XRP AI BOT — FINAL VERSION WITH EVERYTHING RESTORED (Nov 26 2025)
 """
 
 import requests
@@ -23,7 +23,7 @@ client = tweepy.Client(
 )
 
 # -----------------------------
-# Data Fetch + Load (unchanged)
+# Data Fetch + Load
 # -----------------------------
 def fetch_xrp_hourly_data():
     print("Fetching XRP/USDT hourly from CryptoCompare...")
@@ -82,7 +82,7 @@ def compute_market_structure(df):
         return "Unavailable"
 
 # -----------------------------
-# Original Indicators (restored)
+# Your original indicators
 # -----------------------------
 def check_macd_rsi_alerts(df):
     df['ema12'] = df['close'].ewm(span=12).mean()
@@ -121,27 +121,34 @@ def detect_chart_patterns(df):
     return "\n".join(signals) if signals else "Neutral"
 
 # -----------------------------
-# News Section (restored)
+# News — ONLY XRP, BTC, SEC (your original filter)
 # -----------------------------
 def get_xrp_news():
     try:
-        url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=XRP"
+        url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=XRP,BTC,SEC"
         resp = requests.get(url, timeout=10)
-        news = resp.json()["Data"][:3]  # Top 3 news
-        news_text = "\n".join([f"• {n['title']}: {n['body'][:100]}..." for n in news])
-        return news_text or "No recent news"
-    except:
+        articles = resp.json()["Data"][:5]
+
+        lines = []
+        for a in articles:
+            title = a['title']
+            if any(kw in title.lower() for kw in ["xrp", "ripple", "bitcoin", "btc", "sec", "lawsuit", "gensler", "regulation"]):
+                lines.append(f"• {title}")
+
+        return "\n".join(lines) if lines else "No relevant XRP/BTC/SEC news"
+    except Exception as e:
+        print("News failed:", e)
         return "News unavailable"
 
 # -----------------------------
-# YOUR ORIGINAL GORGEOUS EMBED — EXACTLY LIKE 4:18 AM MESSAGE
+# YOUR ORIGINAL GORGEOUS EMBED — 100% RESTORED + FIXED TIMESTAMP
 # -----------------------------
 def send_original_embed(structure, alerts, patterns):
     price = df['close'].iloc[-1]
     change_24h = ((price / df['close'].iloc[-25]) - 1) * 100 if len(df) > 25 else 0
     news = get_xrp_news()
 
-    embed = DiscordEmbed(title="Combined XRP Intelligence Report", color=0x9b59b6)  # Purple
+    embed = DiscordEmbed(title="Combined XRP Intelligence Report", color=0x9b59b6)
     embed.add_embed_field(name="**Market Structure**", value=structure, inline=False)
     embed.add_embed_field(name="**Current Price**", value=f"${price:.4f}", inline=True)
     embed.add_embed_field(name="**24h Change**", value=f"{change_24h:+.2f}%", inline=True)
@@ -150,22 +157,21 @@ def send_original_embed(structure, alerts, patterns):
     embed.add_embed_field(name="**Flips / Triggers**", value="Strong Bullish Flip | Auto-post via GitHub Actions", inline=False)
     embed.add_embed_field(name="**Caution Level**", value="Strong Caution (24h High/Low)", inline=False)
     embed.add_embed_field(name="**News**", value=news, inline=False)
-    embed.set_thumbnail(url="https://cryptologos.cc/logos/xrp-xrp-logo.png")  # XRP logo
+    embed.set_thumbnail(url="https://cryptologos.cc/logos/xrp-xrp-logo.png")
     embed.set_footer(text=f"Data: {len(df)} hourly candles • Updated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    embed.timestamp = datetime.utcnow()
+    embed.timestamp = datetime.utcnow().isoformat()  # ← Fixed
 
     webhook = DiscordWebhook(url=DISCORD_WEBHOOK)
     webhook.add_embed(embed)
     webhook.execute()
-    print("Original embed sent!")
+    print("Original embed sent to Discord!")
 
     # X post
-    tweet = f"XRP Update: {structure} | ${price:.4f} ({change_24h:+.2f}%) #XRP #Crypto"
     try:
-        client.create_tweet(text=tweet)
+        client.create_tweet(text=f"XRP Update: {structure} | ${price:.4f} ({change_24h:+.2f}%) #XRP #Crypto")
         print("X post sent!")
     except Exception as e:
-        print("X failed:", e)
+        print("X post failed:", e)
 
 # -----------------------------
 # Main
