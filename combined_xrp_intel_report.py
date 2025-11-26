@@ -205,7 +205,7 @@ def send_main_report(structure, alerts, patterns):
 
     # News cards + X post
     send_news_embeds()
-    post_to_x()
+    post_to_x(structure, prob, alerts)  # ← FIXED: pass alerts
 
 # -----------------------------
 # Main
