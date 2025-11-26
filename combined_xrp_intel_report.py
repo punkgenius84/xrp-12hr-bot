@@ -12,7 +12,6 @@ Combined Crypto Intel + XRP 12-Hour Report
 
 import requests
 import pandas as pd
-from smartmoneyconcepts import smc  # ← correct import
 import os
 from datetime import datetime, timedelta
 
@@ -70,7 +69,30 @@ def load_csv(file_path: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 # -----------------------------
-# Compute Market Structure — FINAL BULLETPROOF VERSION (no reset_index)
+# Simple, reliable swing highs/lows (pure pandas — no library bug)
+# -----------------------------
+def find_swings(df, swing_length=50):
+    """
+    Find swing highs/lows using pure pandas — 100% stable, no exceptions.
+    """
+    df = df.copy()
+    n = len(df)
+    swings = pd.DataFrame(index=df.index)
+    
+    # Swing highs: high is max in window
+    is_high = (df['high'] == df['high'].rolling(window=2*swing_length+1, center=True).max())
+    swings['high'] = df['high'].where(is_high, pd.NA)
+    
+    # Swing lows: low is min in window
+    is_low = (df['low'] == df['low'].rolling(window=2*swing_length+1, center=True).min())
+    swings['low'] = df['low'].where(is_low, pd.NA)
+    
+    # Drop NaN rows
+    swings = swings.dropna(how='all')
+    return swings
+
+# -----------------------------
+# Compute Market Structure — BULLETPROOF WITH PURE PANDAS SWINGS
 # -----------------------------
 def compute_market_structure(df):
     try:
@@ -83,29 +105,29 @@ def compute_market_structure(df):
 
         required = ["open", "high", "low", "close"]
         if not all(c in df.columns for c in required):
-            print("Market structure computation failed: missing columns", [c for c in required if c not in df.columns], "Available:", df.columns.tolist())
+            missing = [c for c in required if c not in df.columns]
+            print("Market structure computation failed: missing columns", missing, "Available:", df.columns.tolist())
             return "Unavailable"
 
-        # ← KEY FIX: tail(500) WITHOUT reset_index(drop=True) — keeps natural index
-        data = df[required].tail(500)  # No reset_index — this fixes the 'high' bug
+        # Use last 500 rows for swings
+        data = df[required].tail(500)
 
-        swing_df = smc.swing_highs_lows(data, swing_length=50)
+        # ← PURE PANDAS SWINGS — NO LIBRARY BUG
+        swing_df = find_swings(data, swing_length=50)
 
-        if swing_df.empty:
-            return "No Swings Detected"
+        if swing_df.empty or len(swing_df) < 3:
+            return "No Clear Structure (Need more swings)"
 
-        # ← YOUR ORIGINAL FALLBACK — PRIMARY METHOD (always works)
+        # Your original fallback — now primary and always works
         recent_swings = swing_df.tail(3)
-        if len(recent_swings) >= 3:
-            highs = recent_swings['high'].astype(float)
-            lows = recent_swings['low'].astype(float)
-            if highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3] and lows.iloc[-1] > lows.iloc[-2] > lows.iloc[-3]:
-                return "Bullish Structure 🟢"
-            elif highs.iloc[-1] < highs.iloc[-2] < highs.iloc[-3] and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
-                return "Bearish Structure 🔴"
-            else:
-                return "Ranging Structure ⚪"
-        return "No Clear Structure"
+        highs = recent_swings['high'].astype(float)
+        lows = recent_swings['low'].astype(float)
+        if highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3] and lows.iloc[-1] > lows.iloc[-2] > lows.iloc[-3]:
+            return "Bullish Structure 🟢"
+        elif highs.iloc[-1] < highs.iloc[-2] < highs.iloc[-3] and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
+            return "Bearish Structure 🔴"
+        else:
+            return "Ranging Structure ⚪"
     except Exception as e:
         try:
             print("Market structure computation exception:", e, "df columns:", df.columns.tolist())
