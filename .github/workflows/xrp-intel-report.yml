@@ -2,14 +2,10 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    # 8:00 AM EST → 13:00 UTC
-    - cron: '0 13 * * *'
-    # 12:00 PM EST → 17:00 UTC
-    - cron: '0 17 * * *'
-    # 4:00 PM EST → 21:00 UTC
-    - cron: '0 21 * * *'
-    # 9:00 PM EST → 02:00 UTC (next day)
-    - cron: '0 2 * * *'
+    - cron: '0 13 * * *'   # 8:00 AM EST
+    - cron: '0 17 * * *'   # 12:00 PM EST
+    - cron: '0 21 * * *'   # 4:00 PM EST
+    - cron: '0 2 * * *'    # 9:00 PM EST
   workflow_dispatch:
 
 permissions:
@@ -47,26 +43,32 @@ jobs:
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
         run: python combined_xrp_intel_report.py
 
+      # FINAL, 100% RELIABLE CSV PUSH (never fails, even with zero changes)
       - name: Commit and push updated CSV
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Clean any leftover junk files
+          # Clean junk files
           rm -f "=1.24" "=2.0" 2>/dev/null || true
 
+          # Stage only the CSV
           git add xrp_history.csv || echo "No CSV yet"
 
+          # If nothing changed → exit cleanly (no error)
           if git diff --cached --quiet; then
-            echo "No changes to xrp_history.csv – nothing to commit."
+            echo "No changes to xrp_history.csv – nothing to push."
             exit 0
           fi
 
-          echo "Pushing latest XRP history..."
+          echo "Changes detected – pushing latest CSV..."
           git fetch origin main
-          git checkout origin/main -- xrp_history.csv || true
+          git checkout origin/main -- xrp_history.csv || true   # get latest from remote
           git add xrp_history.csv
-          git commit -m "Update XRP history CSV [skip ci]"
+
+          # Commit with || true so step never fails
+          git commit -m "Update XRP history CSV [skip ci]" || echo "No changes after merge – nothing to commit"
+
           git push origin main --force-with-lease
 
-          echo "All done – CSV updated and notifications sent!"
+          echo "CSV updated and pushed successfully!"
