@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-XRP AI BOT — FINAL WITH ORIGINAL NEWS EMBEDS (clickable + previews)
+XRP AI BOT — FINAL PERFECTION (Nov 26 2025)
+Your original embed + clickable news + MAX-info X post
 """
 
 import requests
@@ -23,7 +24,7 @@ client = tweepy.Client(
 )
 
 # -----------------------------
-# Data + CSV (unchanged)
+# Data + CSV
 # -----------------------------
 def fetch_xrp_hourly_data():
     print("Fetching XRP/USDT hourly from CryptoCompare...")
@@ -82,7 +83,7 @@ def compute_market_structure(df):
         return "Unavailable"
 
 # -----------------------------
-# Indicators (your original)
+# Original Indicators
 # -----------------------------
 def check_macd_rsi_alerts(df):
     df['ema12'] = df['close'].ewm(span=12).mean()
@@ -121,7 +122,7 @@ def detect_chart_patterns(df):
     return "\n".join(signals) if signals else "Neutral"
 
 # -----------------------------
-# News — CLICKABLE EMBEDS WITH PREVIEWS (your original style)
+# News — CLICKABLE CARDS (your original style)
 # -----------------------------
 def send_news_embeds():
     try:
@@ -152,7 +153,34 @@ def send_news_embeds():
         print("News failed:", e)
 
 # -----------------------------
-# Main Report Embed + News
+# MAX-INFO X POST (~250 chars)
+# -----------------------------
+def post_to_x():
+    try:
+        price = df['close'].iloc[-1]
+        change_24h = ((price / df['close'].iloc[-25]) - 1) * 100 if len(df) > 25 else 0
+        change_7d = ((price / df['close'].iloc[-169]) - 1) * 100 if len(df) > 169 else 0
+
+        vol_spike = "VOL↑" if df['volume'].iloc[-1] > df['volume'].tail(50).mean() * 2 else "Vol"
+        rsi = int(100 - (100 / (1 + (df['close'].diff(1).clip(lower=0).rolling(14).mean() /
+                                    abs(df['close'].diff(1)).rolling(14).mean()))).iloc[-1])
+        rsi_tag = f" RSI{rsi}" if rsi > 70 or rsi < 30 else ""
+
+        macd = "MACD↑" if "Bullish Crossover" in alerts else "MACD↓" if "Bearish Crossover" in alerts else ""
+
+        tweet = f"""XRP Intel Drop
+${price:.4f} | 24h: {change_24h:+.2f}% | 7d: {change_7d:+.2f}%
+{structure}
+{vol_spike} {macd}{rsi_tag} {patterns.split()[0] if "Neutral" not in patterns else "Neutral"}
+#XRP #Crypto"""
+
+        client.create_tweet(text=tweet)
+        print(f"X post sent! ({len(tweet)} chars)")
+    except Exception as e:
+        print("X post failed:", e)
+
+# -----------------------------
+# Main Report + News + X Post
 # -----------------------------
 def send_main_report(structure, alerts, patterns):
     price = df['close'].iloc[-1]
@@ -175,15 +203,9 @@ def send_main_report(structure, alerts, patterns):
     webhook.execute()
     print("Main report sent!")
 
-    # Send news as separate clickable cards
+    # News cards + X post
     send_news_embeds()
-
-    # X post
-    try:
-        client.create_tweet(text=f"XRP Update: {structure} | ${price:.4f} ({change_24h:+.2f}%) #XRP #Crypto")
-        print("X post sent!")
-    except Exception as e:
-        print("X failed:", e)
+    post_to_x()
 
 # -----------------------------
 # Main
