@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-XRP AI BOT — FINAL WITH BULLISH/BEARISH PROBABILITIES + EVERYTHING
+XRP AI BOT — FINAL PERFECTION (Nov 26 2025)
+Your original embed + clickable news + MAX-info X post
 """
 
 import requests
@@ -56,42 +57,33 @@ def find_swings(df, window=50):
     return swings
 
 # -----------------------------
-# Market Structure + BULL/BEAR PROBABILITY (your original)
+# Market Structure
 # -----------------------------
-def compute_market_structure_and_probability(df):
+def compute_market_structure(df):
     try:
         df = df.copy()
         df.rename(columns=str.lower, inplace=True)
         data = df[["open", "high", "low", "close"]].tail(500)
         swings = find_swings(data, window=50)
-
         if len(swings) < 3:
-            return "Unavailable", "50% / 50%"
-
+            return "Unavailable"
         recent_highs = swings['high'].dropna().tail(3).astype(float)
         recent_lows = swings['low'].dropna().tail(3).astype(float)
-
-        bullish = (recent_highs.iloc[-1] > recent_highs.iloc[-2] > recent_highs.iloc[-3] and
-                   recent_lows.iloc[-1] > recent_lows.iloc[-2] > recent_lows.iloc[-3])
-        bearish = (recent_highs.iloc[-1] < recent_highs.iloc[-2] < recent_highs.iloc[-3] and
-                   recent_lows.iloc[-1] < recent_lows.iloc[-2] < recent_lows.iloc[-3])
-
-        if bullish:
-            structure = "Bullish Structure (HH + HL)"
-            prob = "78% / 22%"
-        elif bearish:
-            structure = "Bearish Structure (LH + LL)"
-            prob = "24% / 76%"
+        if (len(recent_highs) >= 3 and len(recent_lows) >= 3 and
+            recent_highs.iloc[-1] > recent_highs.iloc[-2] > recent_highs.iloc[-3] and
+            recent_lows.iloc[-1] > recent_lows.iloc[-2] > recent_lows.iloc[-3]):
+            return "Bullish Structure (HH + HL)"
+        elif (len(recent_highs) >= 3 and len(recent_lows) >= 3 and
+              recent_highs.iloc[-1] < recent_highs.iloc[-2] < recent_highs.iloc[-3] and
+              recent_lows.iloc[-1] < recent_lows.iloc[-2] < recent_lows.iloc[-3]):
+            return "Bearish Structure (LH + LL)"
         else:
-            structure = "Ranging / Choppy Structure"
-            prob = "51% / 49%"
-
-        return structure, prob
+            return "Ranging / Choppy Structure"
     except:
-        return "Unavailable", "50% / 50%"
+        return "Unavailable"
 
 # -----------------------------
-# Your original indicators
+# Original Indicators
 # -----------------------------
 def check_macd_rsi_alerts(df):
     df['ema12'] = df['close'].ewm(span=12).mean()
@@ -130,7 +122,7 @@ def detect_chart_patterns(df):
     return "\n".join(signals) if signals else "Neutral"
 
 # -----------------------------
-# News — CLICKABLE CARDS
+# News — CLICKABLE CARDS (your original style)
 # -----------------------------
 def send_news_embeds():
     try:
@@ -139,6 +131,7 @@ def send_news_embeds():
         articles = resp.json()["Data"][:5]
 
         webhook = DiscordWebhook(url=DISCORD_WEBHOOK)
+
         for a in articles:
             title = a['title']
             body = a['body'][:200] + "..." if len(a['body']) > 200 else a['body']
@@ -150,6 +143,7 @@ def send_news_embeds():
                 embed.set_image(url=image)
             embed.set_footer(text="Click title to read full article")
             embed.timestamp = datetime.utcfromtimestamp(a['published_on']).isoformat()
+
             webhook.add_embed(embed)
 
         if webhook.embeds:
@@ -161,7 +155,7 @@ def send_news_embeds():
 # -----------------------------
 # MAX-INFO X POST (~250 chars)
 # -----------------------------
-def post_to_x(structure, prob):
+def post_to_x():
     try:
         price = df['close'].iloc[-1]
         change_24h = ((price / df['close'].iloc[-25]) - 1) * 100 if len(df) > 25 else 0
@@ -176,7 +170,7 @@ def post_to_x(structure, prob):
 
         tweet = f"""XRP Intel Drop
 ${price:.4f} | 24h: {change_24h:+.2f}% | 7d: {change_7d:+.2f}%
-{structure} — {prob}
+{structure}
 {vol_spike} {macd}{rsi_tag} {patterns.split()[0] if "Neutral" not in patterns else "Neutral"}
 #XRP #Crypto"""
 
@@ -186,14 +180,14 @@ ${price:.4f} | 24h: {change_24h:+.2f}% | 7d: {change_7d:+.2f}%
         print("X post failed:", e)
 
 # -----------------------------
-# MAIN EMBED + NEWS + X POST
+# Main Report + News + X Post
 # -----------------------------
-def send_main_report(structure, prob, alerts, patterns):
+def send_main_report(structure, alerts, patterns):
     price = df['close'].iloc[-1]
     change_24h = ((price / df['close'].iloc[-25]) - 1) * 100 if len(df) > 25 else 0
 
     embed = DiscordEmbed(title="Combined XRP Intelligence Report", color=0x9b59b6)
-    embed.add_embed_field(name="**Market Structure**", value=f"{structure}\n**Probability:** {prob}", inline=False)
+    embed.add_embed_field(name="**Market Structure**", value=structure, inline=False)
     embed.add_embed_field(name="**Current Price**", value=f"${price:.4f}", inline=True)
     embed.add_embed_field(name="**24h Change**", value=f"{change_24h:+.2f}%", inline=True)
     embed.add_embed_field(name="**MACD / RSI / Volume**", value=alerts or "No Alerts", inline=False)
@@ -209,8 +203,9 @@ def send_main_report(structure, prob, alerts, patterns):
     webhook.execute()
     print("Main report sent!")
 
+    # News cards + X post
     send_news_embeds()
-    post_to_x(structure, prob)
+    post_to_x()
 
 # -----------------------------
 # Main
@@ -224,12 +219,12 @@ def main():
     df.to_csv(CSV_FILE, index=False)
     print(f"Saved CSV — {len(df)} rows")
 
-    structure, prob = compute_market_structure_and_probability(df)
+    structure = compute_market_structure(df)
     alerts = check_macd_rsi_alerts(df)
     patterns = detect_chart_patterns(df)
 
-    print(f"Market Structure: {structure} | Probability: {prob}")
-    send_main_report(structure, prob, alerts, patterns)
+    print("Market Structure:", structure)
+    send_main_report(structure, alerts, patterns)
 
 if __name__ == "__main__":
     main()
