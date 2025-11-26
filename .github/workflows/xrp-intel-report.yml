@@ -37,6 +37,7 @@ jobs:
         run: python combined_xrp_intel_report.py
 
       - name: Commit updated CSV if changed
+        shell: bash
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
