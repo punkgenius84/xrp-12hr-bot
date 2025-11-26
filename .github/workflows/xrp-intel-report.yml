@@ -56,3 +56,4 @@ jobs:
             git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:main
           else
             echo "No changes in xrp_history.csv — skipping commit."
+            fi
