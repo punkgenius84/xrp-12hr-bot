@@ -16,7 +16,6 @@ import smc  # SmartMoneyConcepts library
 import os
 from datetime import datetime, timedelta
 
-# Your existing constants and settings are preserved
 CSV_FILE = "xrp_history.csv"
 
 # -----------------------------
@@ -30,7 +29,7 @@ def fetch_xrp_hourly_data() -> pd.DataFrame:
     resp.raise_for_status()
     json_resp = resp.json()
 
-    # Robust extraction of nested data
+    # Defensive extraction of nested data
     if isinstance(json_resp.get("Data"), dict) and "Data" in json_resp["Data"]:
         data = json_resp["Data"]["Data"]
     elif isinstance(json_resp.get("Data"), list):
@@ -84,6 +83,7 @@ def compute_market_structure(df):
         swing_df = smc.swing_highs_lows(df, swing_length=50)
         if not swing_df.empty:
             swing_df.columns = [c.strip().lower() for c in swing_df.columns]
+            # Defensive mapping if smc returns different column names
             if "high" not in swing_df.columns and "price_high" in swing_df.columns:
                 swing_df["high"] = swing_df["price_high"]
             if "low" not in swing_df.columns and "price_low" in swing_df.columns:
@@ -114,23 +114,22 @@ def compute_market_structure(df):
                 return "Ranging Structure ⚪"
         return "No Clear Structure"
     except Exception as e:
-        try: print("Market structure computation exception:", e, "df columns:", df.columns.tolist())
-        except: print("Market structure computation exception:", e)
+        try:
+            print("Market structure computation exception:", e, "df columns:", df.columns.tolist())
+        except:
+            print("Market structure computation exception:", e)
         return "Unavailable"
 
 # -----------------------------
 # Placeholder: Your alert functions
 # -----------------------------
 def send_discord_alert(message: str):
-    # Your existing Discord webhook logic here
     pass
 
 def check_macd_rsi_alerts(df):
-    # Your existing multi-timeframe MACD/RSI computation logic
     pass
 
 def detect_chart_patterns(df):
-    # Your existing chart pattern detection logic
     pass
 
 # -----------------------------
@@ -153,11 +152,9 @@ def main():
         print(f"Required columns missing after concat: {missing}. Aborting report.")
         return
 
-    # Save updated CSV
     df.to_csv(CSV_FILE, index=False)
     print(f"Saved updated CSV with {len(df)} rows.")
 
-    # Compute market structure
     structure_status = compute_market_structure(df)
     print("Market Structure:", structure_status)
 
