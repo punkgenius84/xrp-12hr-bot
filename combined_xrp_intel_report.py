@@ -24,8 +24,11 @@ X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
 CSV_FILE = "xrp_history.csv"
 
 # ========================= HELPERS =========================
-def fmt(x):
-    return f"{float(x):,.4f}".rstrip("0").rstrip(".") if isinstance(x, (int, float)) else str(x)
+def fmt(x, decimals=4):
+    if isinstance(x, (int, float)):
+        formatted = f"{float(x):,.{decimals}f}".rstrip("0").rstrip(".")
+        return formatted if '.' in formatted or 'e' in formatted.lower() else formatted + '.0' if decimals > 0 else formatted
+    return str(x)
 
 def send_discord(msg):
     if not DISCORD_WEBHOOK:
@@ -94,10 +97,10 @@ def compute_indicators(df):
 def volume_spike(df):
     ratio = df["volume"].iloc[-1] / df["volume"].rolling(24).mean().iloc[-1]
     ratio = round(ratio, 2)
-    if ratio >= 1.5: return f"**EXTREME SURGE** {ratio}x 🔥"
-    if ratio >= 1.3: return f"**Strong surge** {ratio}x ⚡"
-    if ratio >= 1.15: return f"Caution — elevated {ratio}x ⚠️"
-    return "No surge"
+    if ratio >= 1.5: return f"Extreme Surge {ratio}x 🔥"
+    if ratio >= 1.3: return f"Strong Surge {ratio}x ⚡"
+    if ratio >= 1.15: return f"Elevated {ratio}x ⚠️"
+    return "Normal"
 
 # ========================= SMART DYNAMIC LEVELS =========================
 def dynamic_levels(df):
@@ -133,30 +136,35 @@ def dynamic_levels(df):
 def flips_triggers(price, levels):
     triggers = []
     if price > levels["breakout_strong"]: triggers.append("🚀 Strong Bullish Breakout")
-    elif price > levels["breakout_weak"]: triggers.append("Bullish breakout (weak)")
+    elif price > levels["breakout_weak"]: triggers.append("Bullish Breakout (Weak)")
     if price < levels["breakdown_strong"]: triggers.append("💥 Strong Bearish Breakdown")
-    elif price < levels["breakdown_weak"]: triggers.append("Bearish breakdown (weak)")
-    if price < levels["danger"]: triggers.append("🚨 DANGER ZONE ACTIVE")
-    return ", ".join(triggers) if triggers else "None"
+    elif price < levels["breakdown_weak"]: triggers.append("Bearish Breakdown (Weak)")
+    if price < levels["danger"]: triggers.append("🚨 Danger Zone")
+    return triggers[0] if triggers else "Stable"
 
-def caution_level(price, vol_ratio, levels):
-    if vol_ratio >= 1.5 or price < levels["danger"]:
-        return "🚨 **DANGER ZONE** 🔴"
-    if vol_ratio >= 1.3 or price > levels["breakout_strong"]:
-        return "🟠 **Strong Caution**"
-    if vol_ratio >= 1.15:
+def caution_level(price, vol_ratio, levels, price_change_1h):
+    if vol_ratio >= 1.5 or price < levels["danger"] or abs(price_change_1h) >= 5:
+        return "🚨 Danger 🔴"
+    if vol_ratio >= 1.3 or price > levels["breakout_strong"] or abs(price_change_1h) >= 3:
+        return "🟠 Strong Caution"
+    if vol_ratio >= 1.15 or abs(price_change_1h) >= 2:
         return "🟡 Weak Caution"
-    return "✅ Safe levels"
+    return "✅ Safe"
 
 def get_news_section():
     try:
         feed = feedparser.parse("https://cryptonews.com/news/rss/")
+        keywords = ["XRP", "Ripple", "BTC", "Bitcoin"]
+        filtered_entries = [
+            e for e in feed.entries
+            if any(kw.lower() in (e.title + (e.description if 'description' in e else '')).lower() for kw in keywords)
+        ]
         lines = []
-        for e in feed.entries[:5]:
+        for e in filtered_entries[:5]:
             title = e.title.strip().replace("`", "'")
             link = e.link.strip()
             lines.append(f"**{title}**\n{link}\n")
-        return "\n".join(lines) or "No news"
+        return "\n".join(lines) or "No relevant news"
     except Exception as e:
         print("News error:", e)
         return "News temporarily unavailable"
@@ -169,25 +177,32 @@ def build_discord_message(df):
     vol_ratio = df["volume"].iloc[-1] / df["volume"].rolling(24).mean().iloc[-1]
     levels = dynamic_levels(df)
     triggers = flips_triggers(price, levels)
-    caution = caution_level(price, vol_ratio, levels)
+    price_change_1h = ((price / df["close"].iloc[-2]) - 1) * 100 if len(df) > 1 else 0
+    caution = caution_level(price, vol_ratio, levels, price_change_1h)
     high24 = df["high"].tail(24).max()
     low24 = df["low"].tail(24).min()
 
-    bull = 50
-    if price > i["ma50"]: bull += 15
-    if i["macd"] > i["signal"]: bull += 20
-    if i["rsi"] < 30: bull += 10
-    elif i["rsi"] > 70: bull -= 15
-    bull = min(100, max(0, bull))
+    # Improved Bull/Bear Probability
+    bull_score = 0
+    if price > i["ma200"]: bull_score += 30  # Increased weight for longer-term MA
+    if i["macd"] > i["signal"]: bull_score += 25
+    if i["rsi"] < 30: bull_score += 20  # Oversold favors rebound
+    elif i["rsi"] > 70: bull_score -= 20  # Overbought favors pullback
+    if i["hist_trend"] == "Increasing 🟢": bull_score += 15
+    if price_change_1h > 0: bull_score += min(10, price_change_1h * 2)  # Momentum boost
+    bull = min(100, max(0, 50 + bull_score))  # Start at 50, adjust by score
     bear = 100 - bull
+
+    price_change_alert = f"🚨 **1h Price Alert:** {price_change_1h:+.2f}% ({'🔥 Surge' if price_change_1h >= 5 else '💥 Drop' if price_change_1h <= -5 else 'Stable'})" if abs(price_change_1h) >= 5 else ""
 
     return f"""
 **🚨 Combined XRP Intelligence Report — {datetime.utcnow().strftime('%b %d, %H:%M UTC')}**
 
-💰 **Current Price:** `${fmt(price)}`
-📈 **RSI (14):** `{fmt(i['rsi'])}`
-📉 **MACD:** `{fmt(i['macd'])}` (signal `{fmt(i['signal'])}`)
-📊 **MA50:** `{fmt(i['ma50'])}`  **MA200:** `{fmt(i['ma200'])}`
+💰 **Current Price:** `${fmt(price, 3)}`
+{price_change_alert}
+📈 **RSI (14):** `{fmt(i['rsi'], 2)}`
+📉 **MACD:** `{fmt(i['macd'], 4)}` (signal `{fmt(i['signal'], 4)}`)
+📊 **MA50:** `{fmt(i['ma50'], 4)}`  **MA200:** `{fmt(i['ma200'], 4)}`
 
 📈 **Bullish Probability:** `{bull}%`
 📉 **Bearish Probability:** `{bear}%`
@@ -195,19 +210,19 @@ def build_discord_message(df):
 
 📊 **Volume Signals:** {vol_text}
 📊 **MACD Histogram Trend:** {i['hist_trend']}
-🧭 **24h High/Low:** `${fmt(high24)}` / `${fmt(low24)}`
+🧭 **24h High/Low:** `${fmt(high24, 4)}` / `${fmt(low24, 4)}`
 
 📌 **Dynamic Levels** ({levels['range_mode']})
-• Breakout weak: `${fmt(levels['breakout_weak'])}`
-• Breakout strong: `${fmt(levels['breakout_strong'])}`
-• Breakdown weak: `${fmt(levels['breakdown_weak'])}`
-• Breakdown strong: `${fmt(levels['breakdown_strong'])}`
-• Danger: `${fmt(levels['danger'])}`
+• Breakout weak: `${fmt(levels['breakout_weak'], 4)}`
+• Breakout strong: `${fmt(levels['breakout_strong'], 4)}`
+• Breakdown weak: `${fmt(levels['breakdown_weak'], 4)}`
+• Breakdown strong: `${fmt(levels['breakdown_strong'], 4)}`
+• Danger: `${fmt(levels['danger'], 4)}`
 
 🔔 **Flips/Triggers:** {triggers}
 **⚠️ Caution Level:** {caution}
 
-**📰 Latest XRP & Crypto News** (click title for article + preview)
+**📰 Latest XRP, Ripple & BTC News** (click title for article + preview)
 {get_news_section()}
 
 *Auto-updated via GitHub Actions • {len(df)} hourly candles*
@@ -216,18 +231,36 @@ def build_discord_message(df):
 # ========================= X TEASER =========================
 def build_x_teaser(df):
     price = df["close"].iloc[-1]
-    prev_price = df["close"].iloc[-24] if len(df) >= 24 else price
-    change_24h = (price / prev_price - 1) * 100
+    i = compute_indicators(df)
+    prev_price_24h = df["close"].iloc[-24] if len(df) >= 24 else price
+    change_24h = (price / prev_price_24h - 1) * 100
+    price_change_1h = ((price / df["close"].iloc[-2]) - 1) * 100 if len(df) > 1 else 0
+    vol_ratio = df["volume"].iloc[-1] / df["volume"].rolling(24).mean().iloc[-1]
     levels = dynamic_levels(df)
-    main_trigger = flips_triggers(price, levels).split(",")[0] if "None" not in flips_triggers(price, levels) else "Holding"
+    main_trigger = flips_triggers(price, levels)
+    caution = caution_level(price, vol_ratio, levels, price_change_1h)
+    vol_text = volume_spike(df)
+
+    # Bull probability calculation (duplicated for teaser)
+    bull_score = 0
+    if price > i["ma200"]: bull_score += 30
+    if i["macd"] > i["signal"]: bull_score += 25
+    if i["rsi"] < 30: bull_score += 20
+    elif i["rsi"] > 70: bull_score -= 20
+    if i["hist_trend"] == "Increasing 🟢": bull_score += 15
+    if price_change_1h > 0: bull_score += min(10, price_change_1h * 2)
+    bull = min(100, max(0, 50 + bull_score))
+
+    price_alert_teaser = f" | 1h: {price_change_1h:+.1f}%" 
 
     return f"""🚨 XRP Intel Drop — {datetime.utcnow().strftime('%b %d, %H:%M')} UTC
 
-💰 ${fmt(price)} ({change_24h:+.2f}% 24h)
-📊 RSI: {fmt(RSIIndicator(df['close'],14).rsi().iloc[-1])}
-🔥 {main_trigger}
+💰 ${fmt(price, 3)} ({change_24h:+.1f}% 24h{price_alert_teaser})
+📊 RSI: {fmt(i['rsi'], 2)} | Bull: {bull}%
+🔥 {main_trigger} | Vol: {vol_text}
+⚠️ {caution}
 
-Full report in my Discord 👇
+Full report in Discord 👇
 https://discord.gg/HD8PdbW2
 #XRP #Ripple #Crypto"""
 
