@@ -1,7 +1,4 @@
-name: Combined XRP + Crypto Intel Report
-
-permissions:
-  contents: write  # Needed to push via GITHUB_TOKEN
+name: XRP 12-Hour Report
 
 on:
   schedule:
@@ -14,24 +11,23 @@ on:
   workflow_dispatch: # allows manual trigger
 
 jobs:
-  run-reports:
+  run-report:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: 3.11
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas ta requests feedparser requests-oauthlib smartmoneyconcepts
+          pip install pandas requests smc
 
-      - name: Run XRP Report (Discord + X Post)
+      - name: Run XRP Intel Script
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           X_API_KEY: ${{ secrets.X_API_KEY }}
@@ -42,9 +38,6 @@ jobs:
         run: python combined_xrp_intel_report.py
 
       - name: Commit updated CSV if changed
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -52,8 +45,7 @@ jobs:
           if ! git diff-index --quiet HEAD; then
             echo "Changes detected — committing CSV update..."
             git commit -m "Update XRP history CSV [skip ci]"
-            # Push using GITHUB_TOKEN to authenticate
-            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:main
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main
           else
             echo "No changes in xrp_history.csv — skipping commit."
-            fi
+          fi
