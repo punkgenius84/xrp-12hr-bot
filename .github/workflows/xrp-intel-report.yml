@@ -1,4 +1,7 @@
-name: XRP Combined Intel Report
+name: Combined XRP + Crypto Intel Report
+
+permissions:
+  contents: write  # Needed to push via GITHUB_TOKEN
 
 on:
   schedule:
@@ -11,35 +14,45 @@ on:
   workflow_dispatch: # allows manual trigger
 
 jobs:
-  build:
+  run-reports:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests pandas ta feedparser requests_oauthlib smartmoneyconcepts
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas ta requests feedparser requests-oauthlib smartmoneyconcepts
 
-    - name: Run XRP Intel Report
-      run: |
-        python combined_xrp_intel_report.py
+      - name: Run XRP Report (Discord + X Post)
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+        run: python combined_xrp_intel_report.py
 
-    - name: Commit CSV Changes
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add xrp_history.csv
-        git diff-index --quiet HEAD || git commit -m "Update XRP history CSV [skip ci]"
-        git push
-
-    - name: Throttle Sleep
-      # Prevent hitting API too many requests in quick succession
-      run: sleep 10
+      - name: Commit updated CSV if changed
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add xrp_history.csv
+          if ! git diff-index --quiet HEAD; then
+            echo "Changes detected — committing CSV update..."
+            git commit -m "Update XRP history CSV [skip ci]"
+            # Push using GITHUB_TOKEN to authenticate
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:main
+          else
+            echo "No changes in xrp_history.csv — skipping commit."
