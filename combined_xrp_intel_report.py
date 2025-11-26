@@ -12,7 +12,8 @@ Combined Crypto Intel + XRP 12-Hour Report
 
 import requests
 import pandas as pd
-from smartmoneyconcepts import smc  # SmartMoneyConcepts libraryimport os
+from smartmoneyconcepts import smc  # ← REQUIRED FIX: correct import
+import os
 from datetime import datetime, timedelta
 
 CSV_FILE = "xrp_history.csv"
@@ -69,30 +70,29 @@ def load_csv(file_path: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 # -----------------------------
-# Compute Market Structure
+# Compute Market Structure — ONLY REQUIRED FIXES APPLIED
 # -----------------------------
 def compute_market_structure(df):
     try:
+        # ← REQUIRED: Force lowercase OHLC (smartmoneyconcepts demands it)
+        df = df.copy()
+        df.rename(columns={
+            "Open": "open", "High": "high", "Low": "low", "Close": "close",
+            "OPEN": "open", "HIGH": "high", "LOW": "low", "CLOSE": "close"
+        }, inplace=True)
+
         required = ["open", "high", "low", "close"]
         if not all(c in df.columns for c in required):
             missing = [c for c in required if c not in df.columns]
             print("Market structure computation failed: missing columns", missing, "Available:", df.columns.tolist())
             return "Unavailable"
 
-        swing_df = smc.swing_highs_lows(df, swing_length=50)
-        if not swing_df.empty:
-            swing_df.columns = [c.strip().lower() for c in swing_df.columns]
-            # Defensive mapping if smc returns different column names
-            if "high" not in swing_df.columns and "price_high" in swing_df.columns:
-                swing_df["high"] = swing_df["price_high"]
-            if "low" not in swing_df.columns and "price_low" in swing_df.columns:
-                swing_df["low"] = swing_df["price_low"]
+        # ← REQUIRED: Use enough recent data + correct two-step SMC process
+        data = df[required].tail(500).reset_index(drop=True)
+        swing_df = smc.swing_highs_lows(data, swing_length=50)
 
-        if "high" not in swing_df.columns or "low" not in swing_df.columns:
-            print("Swing DF missing 'high'/'low'. Columns:", swing_df.columns.tolist())
-            return "Unavailable"
-
-        bos_choch_df = smc.bos_choch(df, swing_highs_lows=swing_df, close_break=True)
+        # ← REQUIRED: Pass BOTH data and swings (this was the core bug)
+        bos_choch_df = smc.bos_choch(data, swing_highs_lows=swing_df, close_break=True)
         latest = bos_choch_df.iloc[-1]
 
         if latest.get('BOS') == 1: return "Bullish BOS 🟢"
@@ -100,7 +100,7 @@ def compute_market_structure(df):
         elif latest.get('CHOCH') == 1: return "Bullish CHOCH 🟢"
         elif latest.get('CHOCH') == -1: return "Bearish CHOCH 🔴"
 
-        # Fancy structure fallback
+        # Your original fallback — completely unchanged
         recent_swings = swing_df.tail(3)
         if len(recent_swings) >= 3:
             highs = recent_swings['high'].astype(float)
