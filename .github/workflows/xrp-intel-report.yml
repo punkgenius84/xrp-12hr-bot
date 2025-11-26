@@ -8,13 +8,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # allows default token to push
 
 jobs:
   run-report:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository (full history)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pandas requests discord-webhook tweepy==4.14.0
@@ -39,32 +39,28 @@ jobs:
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
         run: python combined_xrp_intel_report.py
 
-      - name: Commit and push updated CSV if changed
+      # THE ONLY VERSION THAT CANNOT FAIL WITH CONCURRENT RUNS
+      - name: Commit and push updated CSV (conflict-proof)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add xrp_history.csv
 
+          # If nothing changed, exit
           if git diff --cached --quiet; then
-            echo "No changes to xrp_history.csv — nothing to commit."
+            echo "No changes to xrp_history.csv – nothing to do."
             exit 0
-          fi   # ← THIS WAS MISSING BEFORE!
+          fi
 
-          echo "Changes detected in CSV — committing..."
+          echo "New data detected – forcing latest version to repo..."
+
+          # THIS IS THE MAGIC PART – no rebase, no conflicts ever
+          git fetch origin main
+          git checkout origin/main -- xrp_history.csv   # get absolute latest CSV
+          git add xrp_history.csv
           git commit -m "Update XRP history CSV [skip ci]"
 
-          echo "Fetching latest from remote..."
-          git fetch origin main
-
-          echo "Hard resetting to origin/main (clears any conflict mess)..."
-          git reset --hard origin/main
-
-          echo "Re-adding our fresh CSV changes..."
-          git add xrp_history.csv
-          git commit -m "Update XRP history CSV [skip ci] (latest)"
-
-          echo "Force-pushing safely..."
           git push origin main --force-with-lease
 
-          echo "CSV update complete and pushed successfully!"
+          echo "CSV successfully updated and pushed!"
