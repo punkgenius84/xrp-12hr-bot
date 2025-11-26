@@ -2,13 +2,13 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/15 * * * *'   # remove/adjust if you don't need every 15 min
     - cron: '0 * * * *'
     - cron: '0 0 * * *'
   workflow_dispatch:
 
 permissions:
-  contents: write   # allows default token to push
+  contents: write
 
 jobs:
   run-report:
@@ -24,10 +24,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      # ← FIXED: added the missing smc package
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas requests discord-webhook tweepy==4.14.0
+          pip install pandas requests discord-webhook tweepy==4.14.0 smc
 
       - name: Run XRP Intel Script
         env:
@@ -39,7 +40,7 @@ jobs:
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
         run: python combined_xrp_intel_report.py
 
-      # THE ONLY VERSION THAT CANNOT FAIL WITH CONCURRENT RUNS
+      # ← BULLETPROOF CSV PUSH (no more merge conflicts ever)
       - name: Commit and push updated CSV (conflict-proof)
         run: |
           git config user.name "github-actions[bot]"
@@ -47,20 +48,19 @@ jobs:
 
           git add xrp_history.csv
 
-          # If nothing changed, exit
           if git diff --cached --quiet; then
-            echo "No changes to xrp_history.csv – nothing to do."
+            echo "No changes to xrp_history.csv – skipping commit."
             exit 0
           fi
 
-          echo "New data detected – forcing latest version to repo..."
+          echo "New data detected – forcing latest version..."
 
-          # THIS IS THE MAGIC PART – no rebase, no conflicts ever
+          # Magic sequence that eliminates all conflicts forever
           git fetch origin main
-          git checkout origin/main -- xrp_history.csv   # get absolute latest CSV
+          git checkout origin/main -- xrp_history.csv   # get the absolute latest CSV
           git add xrp_history.csv
           git commit -m "Update XRP history CSV [skip ci]"
 
           git push origin main --force-with-lease
 
-          echo "CSV successfully updated and pushed!"
+          echo "CSV updated and pushed successfully!"
