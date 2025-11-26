@@ -2,7 +2,7 @@ name: XRP 12-Hour Report
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # remove/adjust if you don't need every 15 min
+    - cron: '*/15 * * * *'
     - cron: '0 * * * *'
     - cron: '0 0 * * *'
   workflow_dispatch:
@@ -24,11 +24,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      # ← FIXED: added the missing smc package
+      # ← CORRECTED: exact package name for Smart Money Concepts
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas requests discord-webhook tweepy==4.14.0 smc
+          pip install pandas requests discord-webhook tweepy==4.14.0
+          pip install smartmoneyconcepts
 
       - name: Run XRP Intel Script
         env:
@@ -40,27 +41,24 @@ jobs:
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
         run: python combined_xrp_intel_report.py
 
-      # ← BULLETPROOF CSV PUSH (no more merge conflicts ever)
+      # Bulletproof CSV push (zero conflicts)
       - name: Commit and push updated CSV (conflict-proof)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add xrp_history.csv
+          git add xrp_history.csv || echo "No CSV yet"
 
           if git diff --cached --quiet; then
             echo "No changes to xrp_history.csv – skipping commit."
             exit 0
           fi
 
-          echo "New data detected – forcing latest version..."
-
-          # Magic sequence that eliminates all conflicts forever
+          echo "New data detected – pushing latest version..."
           git fetch origin main
-          git checkout origin/main -- xrp_history.csv   # get the absolute latest CSV
+          git checkout origin/main -- xrp_history.csv
           git add xrp_history.csv
           git commit -m "Update XRP history CSV [skip ci]"
-
           git push origin main --force-with-lease
 
-          echo "CSV updated and pushed successfully!"
+          echo "CSV updated and pushed!"
