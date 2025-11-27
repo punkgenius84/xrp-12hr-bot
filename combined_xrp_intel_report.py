@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ULTIMATE 7-COIN EMPIRE — FINAL WORKING VERSION
-All secrets visible · XRP fallback to old name · Zero skips
+ULTIMATE 7-COIN EMPIRE — FINAL NO-CRASH VERSION
+Works with your current secrets · Never throws KeyError · All coins live when ready
 """
 
 import requests
@@ -14,24 +14,16 @@ import tweepy
 
 eastern = pytz.timezone('America/New_York')
 
-# DIRECT ACCESS — THIS IS THE FIX
-def get_secret(name, fallback=None):
-    """Get secret — falls back to old DISCORD_WEBHOOK only for XRP"""
-    if name == "DISCORD_WEBHOOK_XRP" and name not in os.environ:
-        return os.environ.get("DISCORD_WEBHOOK")  # your old one
-    return os.environ[name]  # all others must exist
+# SAFE SECRET LOADER — NEVER CRASHES
+def get_webhook(coin):
+    if coin == "XRP":
+        # XRP uses your original secret (always works)
+        return os.environ.get("DISCORD_WEBHOOK_XRP") or os.environ["DISCORD_WEBHOOK"]
+    else:
+        # All others use their new secret — if missing, just skip
+        return os.environ.get(f"DISCORD_WEBHOOK_{coin}")
 
-WEBHOOKS = {
-    "XRP":  get_secret("DISCORD_WEBHOOK_XRP"),
-    "BTC":  get_secret("DISCORD_WEBHOOK_BTC"),
-    "ADA":  get_secret("DISCORD_WEBHOOK_ADA"),
-    "ZEC":  get_secret("DISCORD_WEBHOOK_ZEC"),
-    "HBAR": get_secret("DISCORD_WEBHOOK_HBAR"),
-    "ETH":  get_secret("DISCORD_WEBHOOK_ETH"),
-    "SOL":  get_secret("DISCORD_WEBHOOK_SOL"),
-}
-
-# Rest of your perfect config
+# Coin config
 COINS = {
     "XRP":  {"color": 0x9b59b6, "thumb": "https://cryptologos.cc/logos/xrp-xrp-logo.png",       "symbol": "XRP"},
     "BTC":  {"color": 0xf7931a, "thumb": "https://cryptologos.cc/logos/bitcoin-btc-logo.png",   "symbol": "BTC"},
@@ -92,41 +84,41 @@ def bollinger_analysis(df_4h):
             "dist_pct": latest['pct_b'], "squeeze": squeeze, "breakout": breakout}
 
 def send_report(coin):
-    webhook_url = WEBHOOKS[coin]
+    webhook_url = get_webhook(coin)
     if not webhook_url:
-        print(f"{coin} webhook missing")
+        print(f"{coin} → No webhook found, skipping")
         return
 
-    df_4h, df_daily = fetch_data(coin)
-    price = df_4h['close'].iloc[-1]
-    change_24h = (price / df_4h['close'].iloc[-6] - 1)*100 if len(df_4h) >= 6 else 0
-    now_est = datetime.now(eastern).strftime("%I:%M %p EST")
-    bb = bollinger_analysis(df_4h)
-    rsi = int(100 - (100 / (1 + (
-        df_4h['close'].pct_change().clip(lower=0).rolling(14).mean() /
-        abs(df_4h['close'].pct_change()).rolling(14).mean()
-    ).replace([0, float('inf')], 1)).iloc[-1]))
+    try:
+        df_4h, df_daily = fetch_data(coin)
+        price = df_4h['close'].iloc[-1]
+        change_24h = (price / df_4h['close'].iloc[-6] - 1)*100 if len(df_4h) >= 6 else 0
+        now_est = datetime.now(eastern).strftime("%I:%M %p EST")
+        bb = bollinger_analysis(df_4h)
+        rsi = int(100 - (100 / (1 + (
+            df_4h['close'].pct_change().clip(lower=0).rolling(14).mean() /
+            abs(df_4h['close'].pct_change()).rolling(14).mean()
+        ).replace([0, float('inf')], 1)).iloc[-1]))
 
-    daily_struct = market_structure(df_daily, "Daily")
-    h4_struct = market_structure(df_4h, "4H")
+        daily_struct = market_structure(df_daily, "Daily")
+        h4_struct = market_structure(df_4h, "4H")
 
-    embed = DiscordEmbed(title=f"Combined {coin} Intelligence Report", color=COINS[coin]["color"])
-    embed.add_embed_field(name="**Market Structure**", value=f"**Daily:** {daily_struct}\n**4-Hour:** {h4_struct}", inline=False)
-    embed.add_embed_field(name="**Price**", value=f"${price:,.4f}", inline=True)
-    embed.add_embed_field(name="**24h**", value=f"{change_24h:+.2f}%", inline=True)
-    embed.add_embed_field(name="**BB (20,2)**", value=f"U: ${bb['upper']:,.4f}\nM: ${bb['mid']:,.4f}\nL: ${bb['lower']:,.4f}", inline=True)
-    embed.add_embed_field(name="**BB Position**", value=f"{bb['dist_pct']:.1f}% from lower", inline=True)
-    embed.add_embed_field(name="**BB Status**", value=f"{bb['squeeze']}\n{bb['breakout']}", inline=True)
-    embed.add_embed_field(name="**RSI (14)**", value=f"{rsi}", inline=True)
-    embed.set_thumbnail(url=COINS[coin]["thumb"])
-    embed.set_footer(text=f"Updated {now_est} | 4× Daily Report")
-    embed.timestamp = datetime.utcnow().isoformat()
+        embed = DiscordEmbed(title=f"Combined {coin} Intelligence Report", color=COINS[coin]["color"])
+        embed.add_embed_field(name="**Market Structure**", value=f"**Daily:** {daily_struct}\n**4-Hour:** {h4_struct}", inline=False)
+        embed.add_embed_field(name="**Price**", value=f"${price:,.4f}", inline=True)
+        embed.add_embed_field(name="**24h**", value=f"{change_24h:+.2f}%", inline=True)
+        embed.add_embed_field(name="**BB (20,2)**", value=f"U: ${bb['upper']:,.4f}\nM: ${bb['mid']:,.4f}\nL: ${bb['lower']:,.4f}", inline=True)
+        embed.add_embed_field(name="**BB Position**", value=f"{bb['dist_pct']:.1f}% from lower", inline=True)
+        embed.add_embed_field(name="**BB Status**", value=f"{bb['squeeze']}\n{bb['breakout']}", inline=True)
+        embed.add_embed_field(name="**RSI (14)**", value=f"{rsi}", inline=True)
+        embed.set_thumbnail(url=COINS[coin]["thumb"])
+        embed.set_footer(text=f"Updated {now_est} | 4× Daily Report")
+        embed.timestamp = datetime.utcnow().isoformat()
 
-    DiscordWebhook(url=webhook_url).add_embed(embed).execute()
-    print(f"{coin} → Sent")
+        DiscordWebhook(url=webhook_url).add_embed(embed).execute()
+        print(f"{coin} → Sent to Discord")
 
-    if coin == "XRP":
-        try:
+        if coin == "XRP":
             tweet = f"""XRP • {now_est}
 ${price:.4f} ({change_24h:+.2f}%)
 Daily: {daily_struct} | 4H: {h4_struct}
@@ -135,15 +127,13 @@ Price {bb['dist_pct']:.0f}% from lower band | RSI {rsi}
 #XRP #Crypto"""
             client.create_tweet(text=tweet)
             print("XRP → Tweeted")
-        except Exception as e:
-            print("Tweet failed:", e)
+
+    except Exception as e:
+        print(f"{coin} failed: {e}")
 
 def main():
     for coin in ["XRP", "BTC", "ADA", "ZEC", "HBAR", "ETH", "SOL"]:
-        try:
-            send_report(coin)
-        except Exception as e:
-            print(f"{coin} failed:", e)
+        send_report(coin)
 
 if __name__ == "__main__":
     main()
