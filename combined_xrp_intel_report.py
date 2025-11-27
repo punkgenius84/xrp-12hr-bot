@@ -52,7 +52,7 @@ def fetch_data(coin):
 
 def market_structure(df, timeframe):
     try:
-        window = 10 if timeframe == "Daily" else 15
+        window = 10 if timeframe == "Daily" else 10
         high_roll = df['high'].rolling(2*window+1, center=True).max()
         low_roll = df['low'].rolling(2*window+1, center=True).min()
         highs = df['high'][df['high'] == high_roll].dropna().tail(4)
@@ -97,12 +97,10 @@ def bollinger_analysis(df_4h):
 
 # BULLISH PROBABILITY CALCULATION
 def calculate_bullish_probability(bb, rsi, daily_struct, h4_struct):
-    score = 50  # neutral base
+    score = 50
 
-    # BB position (strongest weight)
     score += (bb['dist_pct'] - 50) * 0.6
 
-    # RSI
     if rsi < 30:
         score -= 15
     elif rsi > 70:
@@ -110,7 +108,6 @@ def calculate_bullish_probability(bb, rsi, daily_struct, h4_struct):
     else:
         score += (rsi - 50) * 0.3
 
-    # Market Structure
     if "Bullish" in daily_struct:
         score += 20
     elif "Bearish" in daily_struct:
@@ -121,7 +118,6 @@ def calculate_bullish_probability(bb, rsi, daily_struct, h4_struct):
     elif "Bearish" in h4_struct:
         score -= 15
 
-    # Squeeze + Breakout bonus
     if bb['squeeze'] == "SQUEEZE ACTIVE":
         score += 12
     if "BULLISH BREAKOUT" in bb['breakout']:
@@ -129,8 +125,7 @@ def calculate_bullish_probability(bb, rsi, daily_struct, h4_struct):
     elif "BEARISH BREAKOUT" in bb['breakout']:
         score -= 18
 
-    probability = max(5, min(95, round(score)))  # clamp 5–95%
-    return probability
+    return max(5, min(95, round(score)))
 
 def send_report(coin):
     webhook_url = os.environ.get(f"DISCORD_WEBHOOK_{coin}")
@@ -141,7 +136,6 @@ def send_report(coin):
     try:
         hourly, df_4h, df_daily = fetch_data(coin)
 
-        # Save XRP history only
         if coin == "XRP":
             hourly_reset = hourly.reset_index().rename(columns={"time": "open_time"})
             try:
@@ -164,24 +158,16 @@ def send_report(coin):
 
         daily_struct = market_structure(df_daily, "Daily")
         h4_struct = market_structure(df_4h, "4H")
-
-        # BULLISH PROBABILITY
         bullish_prob = calculate_bullish_probability(bb, rsi, daily_struct, h4_struct)
 
-        # MAIN REPORT — TITLE CHANGED ONLY
         embed = DiscordEmbed(title=f"{coin} Market Report", color=COINS[coin]["color"])
-        
-        # Bullish Probability still at the very top
-        embed.add_embed_field(
-            name="**Bullish Probability**",
-            value=f"**{bullish_prob}%**",
-            inline=False
-        )
-
+        embed.add_embed_field(name="**Bullish Probability**", value=f"**{bullish_prob}%**", inline=False)
         embed.add_embed_field(name="**Market Structure**", value=f"**Daily:** {daily_struct}\n**4-Hour:** {h4_struct}", inline=False)
         embed.add_embed_field(name="**Current Price**", value=f"${price:.4f}", inline=True)
         embed.add_embed_field(name="**24h Change**", value=f"{change_24h:+.2f}%", inline=True)
-        embed.add_embed_field(name="**Bollinger Bands (20,2)**", value=f"Upper: ${bb['upper']:.4f}\nMid: ${bb['mid']:.4f}\nLower: ${bb['lower']:.4f}", inline=True)
+        embed.add_embed_field(name="**Bollinger Bands (20,2)**",
+                              value=f"Upper: ${bb['upper']:.4f}\nMid: ${bb['mid']:.4f}\nLower: ${bb['lower']:.4f}",
+                              inline=True)
         embed.add_embed_field(name="**BB Position**", value=f"{bb['dist_pct']:.1f}% from lower", inline=True)
         embed.add_embed_field(name="**BB Status**", value=f"{bb['squeeze']}\n{bb['breakout']}", inline=True)
         embed.add_embed_field(name="**RSI (14)**", value=f"{rsi}", inline=True)
@@ -192,37 +178,7 @@ def send_report(coin):
         webhook = DiscordWebhook(url=webhook_url)
         webhook.add_embed(embed)
         webhook.execute()
-        print(f"{coin} → Report sent! (Bullish Probability: {bullish_prob}%)")
 
-        # PER-COIN NEWS
-        try:
-            news_resp = requests.get(
-                f"https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories={coin}",
-                timeout=10
-            ).json()
-            articles = news_resp.get("Data", [])[:4]
-
-            if articles:
-                news_hook = DiscordWebhook(url=webhook_url)
-                news_hook.set_content(f"**Latest {coin} News**")
-                for a in articles:
-                    e = DiscordEmbed(
-                        title=a['title'][:256],
-                        description=(a['body'][:390] + "...") if len(a['body']) > 390 else a['body'],
-                        color=COINS[coin]["color"],
-                        url=a['url']
-                    )
-                    if a.get('imageurl'):
-                        e.set_image(url=a['imageurl'])
-                    e.set_footer(text="Click title → full article")
-                    e.timestamp = datetime.utcfromtimestamp(a['published_on']).isoformat()
-                    news_hook.add_embed(e)
-                news_hook.execute()
-                print(f"{coin} → News delivered!")
-        except Exception as e:
-            print(f"{coin} news failed: {e}")
-
-        # TWEET ONLY XRP (unchanged)
         if coin == "XRP":
             tweet = f"""{coin} • {now_est}
 ${price:.4f} ({change_24h:+.2f}%)
@@ -232,12 +188,10 @@ BB: {bb['squeeze']} {bb['breakout']}
 Price {bb['dist_pct']:.0f}% from lower band | RSI {rsi}
 #XRP #Crypto"""
             client.create_tweet(text=tweet)
-            print("XRP → Tweeted with Bullish Probability!")
 
     except Exception as e:
         print(f"{coin} failed: {e}")
 
-# ============================= MAIN =============================
 if __name__ == "__main__":
-    for coin in ["XRP", "BTC", "ADA", "ZEC", "HBAR", "ETH", "SOL"]:
+    for coin in ["XRP","BTC","ADA","ZEC","HBAR","ETH","SOL"]:
         send_report(coin)
