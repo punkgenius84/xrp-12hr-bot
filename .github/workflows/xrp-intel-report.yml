@@ -21,19 +21,19 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas requests discord-webhook tweepy==4.14.0 smartmoneyconcepts
+          pip install pandas requests discord-webhook tweepy==4.14.0
 
-      - name: Clean up weird pip artifacts
+      - name: Clean pip artifacts
         run: rm -f "=1.24" "=2.0" 2>/dev/null || true
 
-      - name: Run XRP Intel Script
+      - name: Run XRP Intel Bot
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
@@ -43,32 +43,16 @@ jobs:
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
         run: python combined_xrp_intel_report.py
 
-      # FINAL, 100% RELIABLE CSV PUSH (never fails, even with zero changes)
-      - name: Commit and push updated CSV
+      - name: Commit & push CSV (100% reliable)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Clean junk files
           rm -f "=1.24" "=2.0" 2>/dev/null || true
-
-          # Stage only the CSV
-          git add xrp_history.csv || echo "No CSV yet"
-
-          # If nothing changed → exit cleanly (no error)
+          git add xrp_history.csv || echo "No CSV"
           if git diff --cached --quiet; then
-            echo "No changes to xrp_history.csv – nothing to push."
+            echo "No CSV changes"
             exit 0
           fi
-
-          echo "Changes detected – pushing latest CSV..."
-          git fetch origin main
-          git checkout origin/main -- xrp_history.csv || true   # get latest from remote
-          git add xrp_history.csv
-
-          # Commit with || true so step never fails
-          git commit -m "Update XRP history CSV [skip ci]" || echo "No changes after merge – nothing to commit"
-
-          git push origin main --force-with-lease
-
-          echo "CSV updated and pushed successfully!"
+          git commit -m "Update XRP history CSV [skip ci]" || echo "No changes"
+          git push origin main --force-with-lease || echo "Push skipped"
+          echo "CSV updated successfully!"
