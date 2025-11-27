@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 XRP AI BOT — FINAL PERFECTION (2025) + 7-COIN EMPIRE WITH PER-COIN NEWS
++ BULLISH PROBABILITY INDICATOR IS BACK BABY
 """
 
 import requests
@@ -94,6 +95,43 @@ def bollinger_analysis(df_4h):
         'dist_pct': dist_pct, 'squeeze': squeeze, 'breakout': breakout_dir
     }
 
+# BULLISH PROBABILITY CALCULATION
+def calculate_bullish_probability(bb, rsi, daily_struct, h4_struct):
+    score = 50  # neutral base
+
+    # BB position (strongest weight)
+    score += (bb['dist_pct'] - 50) * 0.6
+
+    # RSI
+    if rsi < 30:
+        score -= 15
+    elif rsi > 70:
+        score += 15
+    else:
+        score += (rsi - 50) * 0.3
+
+    # Market Structure
+    if "Bullish" in daily_struct:
+        score += 20
+    elif "Bearish" in daily_struct:
+        score -= 20
+
+    if "Bullish" in h4_struct:
+        score += 15
+    elif "Bearish" in h4_struct:
+        score -= 15
+
+    # Squeeze + Breakout bonus
+    if bb['squeeze'] == "SQUEEZE ACTIVE":
+        score += 12
+    if "BULLISH BREAKOUT" in bb['breakout']:
+        score += 18
+    elif "BEARISH BREAKOUT" in bb['breakout']:
+        score -= 18
+
+    probability = max(5, min(95, round(score)))  # clamp 5–95%
+    return probability
+
 def send_report(coin):
     webhook_url = os.environ.get(f"DISCORD_WEBHOOK_{coin}")
     if not webhook_url:
@@ -127,8 +165,19 @@ def send_report(coin):
         daily_struct = market_structure(df_daily, "Daily")
         h4_struct = market_structure(df_4h, "4H")
 
-        # MAIN REPORT
-        embed = DiscordEmbed(title=f"Combined {coin} Intelligence Report", color=COINS[coin]["color"])
+        # BULLISH PROBABILITY
+        bullish_prob = calculate_bullish_probability(bb, rsi, daily_struct, h4_struct)
+
+        # MAIN REPORT — TITLE CHANGED ONLY
+        embed = DiscordEmbed(title=f"{coin} Market Report", color=COINS[coin]["color"])
+        
+        # Bullish Probability still at the very top
+        embed.add_embed_field(
+            name="**Bullish Probability**",
+            value=f"**{bullish_prob}%**",
+            inline=False
+        )
+
         embed.add_embed_field(name="**Market Structure**", value=f"**Daily:** {daily_struct}\n**4-Hour:** {h4_struct}", inline=False)
         embed.add_embed_field(name="**Current Price**", value=f"${price:.4f}", inline=True)
         embed.add_embed_field(name="**24h Change**", value=f"{change_24h:+.2f}%", inline=True)
@@ -143,9 +192,9 @@ def send_report(coin):
         webhook = DiscordWebhook(url=webhook_url)
         webhook.add_embed(embed)
         webhook.execute()
-        print(f"{coin} → Report sent!")
+        print(f"{coin} → Report sent! (Bullish Probability: {bullish_prob}%)")
 
-        # PER-COIN NEWS — ONLY RELEVANT ARTICLES
+        # PER-COIN NEWS
         try:
             news_resp = requests.get(
                 f"https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories={coin}",
@@ -173,16 +222,17 @@ def send_report(coin):
         except Exception as e:
             print(f"{coin} news failed: {e}")
 
-        # TWEET ONLY XRP
+        # TWEET ONLY XRP (unchanged)
         if coin == "XRP":
             tweet = f"""{coin} • {now_est}
 ${price:.4f} ({change_24h:+.2f}%)
+Bullish Probability: {bullish_prob}%
 Daily: {daily_struct} | 4H: {h4_struct}
 BB: {bb['squeeze']} {bb['breakout']}
 Price {bb['dist_pct']:.0f}% from lower band | RSI {rsi}
 #XRP #Crypto"""
             client.create_tweet(text=tweet)
-            print("XRP → Tweeted!")
+            print("XRP → Tweeted with Bullish Probability!")
 
     except Exception as e:
         print(f"{coin} failed: {e}")
