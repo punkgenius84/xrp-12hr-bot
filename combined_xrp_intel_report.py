@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-ULTIMATE 7-COIN CRYPTO INTEL EMPIRE (2025)
-XRP • BTC • ADA • ZEC • HBAR • ETH • SOL — ALL LIVE
-Each coin → own Discord channel · XRP tweets · Perfect EST
+ULTIMATE 7-COIN EMPIRE — FINAL VERSION (works with your current secrets)
+XRP uses your old DISCORD_WEBHOOK · Others use the new ones you just added
 """
 
 import requests
@@ -14,18 +13,21 @@ from discord_webhook import DiscordWebhook, DiscordEmbed
 import tweepy
 
 # =============================
-# TIME & WEBHOOKS (you already added these secrets)
+# TIME
 # =============================
 eastern = pytz.timezone('America/New_York')
 
+# =============================
+# WEBHOOKS — BACKWARD COMPATIBLE + FUTURE-PROOF
+# =============================
 WEBHOOKS = {
-    "XRP":  os.environ["DISCORD_WEBHOOK_XRP"],
-    "BTC":  os.environ["DISCORD_WEBHOOK_BTC"],
-    "ADA":  os.environ["DISCORD_WEBHOOK_ADA"],
-    "ZEC":  os.environ["DISCORD_WEBHOOK_ZEC"],
-    "HBAR": os.environ["DISCORD_WEBHOOK_HBAR"],
-    "ETH":  os.environ["DISCORD_WEBHOOK_ETH"],
-    "SOL":  os.environ["DISCORD_WEBHOOK_SOL"],
+    "XRP":  os.environ.get("DISCORD_WEBHOOK_XRP") or os.environ["DISCORD_WEBHOOK"],  # ← works with both!
+    "BTC":  os.environ.get("DISCORD_WEBHOOK_BTC"),
+    "ADA":  os.environ.get("DISCORD_WEBHOOK_ADA"),
+    "ZEC":  os.environ.get("DISCORD_WEBHOOK_ZEC"),
+    "HBAR": os.environ.get("DISCORD_WEBHOOK_HBAR"),
+    "ETH":  os.environ.get("DISCORD_WEBHOOK_ETH"),
+    "SOL":  os.environ.get("DISCORD_WEBHOOK_SOL"),
 }
 
 # Coin styling
@@ -62,7 +64,7 @@ def fetch_data(coin):
     return df_4h, df_daily
 
 # =============================
-# Indicators (100% coin-agnostic)
+# Indicators (exactly like your original perfect version)
 # =============================
 def market_structure(df, timeframe):
     try:
@@ -100,6 +102,11 @@ def bollinger_analysis(df_4h):
 # SEND REPORT
 # =============================
 def send_report(coin):
+    # Skip if webhook missing (except XRP which has fallback)
+    if coin != "XRP" and not WEBHOOKS[coin]:
+        print(f"{coin} webhook missing — skipping")
+        return
+
     df_4h, df_daily = fetch_data(coin)
     price = df_4h['close'].iloc[-1]
     change_24h = (price / df_4h['close'].iloc[-6] - 1)*100 if len(df_4h) >= 6 else 0
@@ -113,7 +120,6 @@ def send_report(coin):
     daily_struct = market_structure(df_daily, "Daily")
     h4_struct = market_structure(df_4h, "4H")
 
-    # Discord
     embed = DiscordEmbed(title=f"Combined {coin} Intelligence Report", color=COINS[coin]["color"])
     embed.add_embed_field(name="**Market Structure**", value=f"**Daily:** {daily_struct}\n**4-Hour:** {h4_struct}", inline=False)
     embed.add_embed_field(name="**Price**", value=f"${price:,.4f}", inline=True)
@@ -129,9 +135,8 @@ def send_report(coin):
     webhook = DiscordWebhook(url=WEBHOOKS[coin])
     webhook.add_embed(embed)
     webhook.execute()
-    print(f"{coin} → Discord sent")
+    print(f"{coin} → Sent")
 
-    # Only XRP tweets
     if coin == "XRP":
         try:
             tweet = f"""XRP • {now_est}
@@ -143,17 +148,17 @@ Price {bb['dist_pct']:.0f}% from lower band | RSI {rsi}
             client.create_tweet(text=tweet)
             print("XRP → Tweeted")
         except Exception as e:
-            print("XRP tweet failed:", e)
+            print("Tweet failed:", e)
 
 # =============================
-# MAIN — ALL 7 COINS
+# MAIN
 # =============================
 def main():
     for coin in ["XRP", "BTC", "ADA", "ZEC", "HBAR", "ETH", "SOL"]:
         try:
             send_report(coin)
         except Exception as e:
-            print(f"{coin} failed entirely:", e)
+            print(f"{coin} crashed:", e)
 
 if __name__ == "__main__":
     main()
