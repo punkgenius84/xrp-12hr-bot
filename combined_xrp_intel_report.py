@@ -74,7 +74,7 @@ def bollinger_analysis(df_4h):
 def send_report(coin):
     # Safe webhook loading
     if coin == "XRP":
-        webhook_url = os.environ.get("DISCORD_WEBHOOK_XRP") or os.environ.get("DISCORD_WEBHOOK")
+        webhook_url = os.environ.get("DISCORD_WEBHOOK_XRP") or os.environ.get("DISCORD_WEBHOOK") or os.environ.get("WEBHOOK_URL")
     else:
         webhook_url = os.environ.get(f"DISCORD_WEBHOOK_{coin}")
 
