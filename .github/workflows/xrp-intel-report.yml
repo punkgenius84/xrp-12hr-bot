@@ -36,6 +36,14 @@ jobs:
       - name: Run XRP Intel Bot
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_WEBHOOK_XRP: ${{ secrets.DISCORD_WEBHOOK_XRP }}
+          DISCORD_WEBHOOK_BTC: ${{ secrets.DISCORD_WEBHOOK_BTC }}
+          DISCORD_WEBHOOK_ADA: ${{ secrets.DISCORD_WEBHOOK_ADA }}
+          DISCORD_WEBHOOK_ETH: ${{ secrets.DISCORD_WEBHOOK_ETH }}
+          DISCORD_WEBHOOK_SOL: ${{ secrets.DISCORD_WEBHOOK_SOL }}
+          DISCORD_WEBHOOK_HBAR: ${{ secrets.DISCORD_WEBHOOK_HBAR }}
+          DISCORD_WEBHOOK_ZEC: ${{ secrets.DISCORD_WEBHOOK_ZEC }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           X_API_KEY: ${{ secrets.X_API_KEY }}
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
