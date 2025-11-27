@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-XRP AI BOT — FINAL PERFECTION (Nov 26 2025)
-Your original embed + clickable news + MAX-info X post + working market structure
+XRP AI BOT — 4× Daily Report (8AM, 12PM, 4PM, 9PM EST)
+Daily + 4H Market Structure + Pro Alerts + News + X Post
 """
 
 import requests
@@ -12,9 +12,8 @@ from discord_webhook import DiscordWebhook, DiscordEmbed
 import tweepy
 
 CSV_FILE = "xrp_history.csv"
-
-# Secrets
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK"]
+
 client = tweepy.Client(
     bearer_token=os.environ["X_BEARER_TOKEN"],
     consumer_key=os.environ["X_API_KEY"],
@@ -23,172 +22,94 @@ client = tweepy.Client(
     access_token_secret=os.environ["X_ACCESS_SECRET"]
 )
 
-# -----------------------------
-# Data Fetch + Load
-# -----------------------------
-def fetch_xrp_hourly_data():
-    print("Fetching XRP/USDT hourly from CryptoCompare...")
+# =============================
+# Data: Hourly → 4H + Daily
+# =============================
+def fetch_data():
     url = "https://min-api.cryptocompare.com/data/v2/histohour"
     resp = requests.get(url, params={"fsym": "XRP", "tsym": "USDT", "limit": 2000}, timeout=20)
     data = resp.json()["Data"]["Data"]
     df = pd.DataFrame([d for d in data if d["time"] > 0])
-    df["open_time"] = pd.to_datetime(df["time"], unit="s")
+    df["time"] = pd.to_datetime(df["time"], unit="s")
     df.rename(columns={"volumeto": "volume"}, inplace=True)
-    df = df[["open_time", "open", "high", "low", "close", "volume"]]
-    return df
 
-def load_csv():
+    hourly = df[["time", "open", "high", "low", "close", "volume"]].set_index("time")
+    df_4h = hourly.resample('4H').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna()
+    df_daily = hourly.resample('1D').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna()
+
+    return hourly, df_4h, df_daily
+
+# =============================
+# Market Structure (Swing Highs/Lows)
+# =============================
+def market_structure(df, tf):
     try:
-        df = pd.read_csv(CSV_FILE)
-        df["open_time"] = pd.to_datetime(df["open_time"])
-        return df
-    except:
-        return pd.DataFrame()
+        window = 10 if tf == "Daily" else 15
+        high_roll = df['high'].rolling(2*window+1, center=True).max()
+        low_roll = df['low'].rolling(2*window+1, center=True).min()
 
-# -----------------------------
-# Pure pandas swings (100% stable)
-# -----------------------------
-def find_swings(df, window=50):
-    high_roll = df['high'].rolling(window=2*window+1, center=True).max()
-    low_roll = df['low'].rolling(window=2*window+1, center=True).min()
-    is_high = df['high'] == high_roll
-    is_low = df['low'] == low_roll
-    swings = pd.DataFrame({'high': df['high'].where(is_high), 'low': df['low'].where(is_low)}).dropna(how='all')
-    return swings
+        swings_high = df['high'][df['high'] == high_roll].dropna().tail(4)
+        swings_low = df['low'][df['low'] == low_roll].dropna().tail(4)
 
-# -----------------------------
-# Market Structure (working)
-# -----------------------------
-def compute_market_structure(df):
-    try:
-        df = df.copy()
-        df.rename(columns=str.lower, inplace=True)
-        data = df[["open", "high", "low", "close"]].tail(500)
-        swings = find_swings(data, window=50)
-        if len(swings) < 3:
-            return "Unavailable"
-        recent_highs = swings['high'].dropna().tail(3).astype(float)
-        recent_lows = swings['low'].dropna().tail(3).astype(float)
-        if (len(recent_highs) >= 3 and len(recent_lows) >= 3 and
-            recent_highs.iloc[-1] > recent_highs.iloc[-2] > recent_highs.iloc[-3] and
-            recent_lows.iloc[-1] > recent_lows.iloc[-2] > recent_lows.iloc[-3]):
-            return "Bullish Structure (HH + HL)"
-        elif (len(recent_highs) >= 3 and len(recent_lows) >= 3 and
-              recent_highs.iloc[-1] < recent_highs.iloc[-2] < recent_highs.iloc[-3] and
-              recent_lows.iloc[-1] < recent_lows.iloc[-2] < recent_lows.iloc[-3]):
-            return "Bearish Structure (LH + LL)"
+        if len(swings_high) < 3 or len(swings_low) < 3:
+            return "Ranging"
+
+        # HH + HL = Bullish
+        if (swings_high.iloc[-1] > swings_high.iloc[-2] > swings_high.iloc[-3] and
+            swings_low.iloc[-1] > swings_low.iloc[-2] > swings_low.iloc[-3]):
+            return "Bullish (HH+HL)"
+        # LH + LL = Bearish
+        elif (swings_high.iloc[-1] < swings_high.iloc[-2] < swings_high.iloc[-3] and
+              swings_low.iloc[-1] < swings_low.iloc[-2] < swings_low.iloc[-3]):
+            return "Bearish (LH+LL)"
         else:
-            return "Ranging / Choppy Structure"
+            return "Ranging/Choppy"
     except:
         return "Unavailable"
 
-# -----------------------------
-# Your original indicators
-# -----------------------------
-def check_macd_rsi_alerts(df):
+# =============================
+# Alerts (4H)
+# =============================
+def get_alerts(df_4h):
+    df = df_4h.copy()
     df['ema12'] = df['close'].ewm(span=12).mean()
     df['ema26'] = df['close'].ewm(span=26).mean()
     df['macd'] = df['ema12'] - df['ema26']
     df['signal'] = df['macd'].ewm(span=9).mean()
-    df['rsi'] = 100 - (100 / (1 + (df['close'].diff(1).clip(lower=0).rolling(14).mean() /
-                                 abs(df['close'].diff(1)).rolling(14).mean())))
+    df['rsi'] = 100 - (100 / (1 + df['close'].pct_change().clip(lower=0).rolling(14).mean() /
+                                 abs(df['close'].pct_change()).rolling(14).mean()))
+
     latest = df.iloc[-1]
     prev = df.iloc[-2]
     alerts = []
+
     if prev['macd'] < prev['signal'] and latest['macd'] > latest['signal']:
-        alerts.append("MACD Bullish Crossover")
-    elif prev['macd'] > prev['signal'] and latest['macd'] < latest['signal']:
-        alerts.append("MACD Bearish Crossover")
-    if latest['rsi'] > 70: alerts.append("RSI Overbought (>70)")
-    if latest['rsi'] < 30: alerts.append("RSI Oversold (<30)")
-    avg_vol = df['volume'].tail(50).mean()
-    if latest['volume'] > avg_vol * 2: alerts.append("Volume Spike")
-    return "\n".join(alerts) if alerts else "No Alerts"
+        alerts.append("MACD BULLISH CROSS")
+    if prev['macd'] > prev['signal'] and latest['macd'] < latest['signal']:
+        alerts.append("MACD BEARISH CROSS")
+    if latest['rsi'] > 70: alerts.append("RSI OVERBOUGHT")
+    if latest['rsi'] < 30: alerts.append("RSI OVERSOLD")
+    if latest['volume'] > df['volume'].tail(20).mean() * 2.5:
+        alerts.append("VOLUME SPIKE")
 
-def detect_chart_patterns(df):
-    df['ema50'] = df['close'].ewm(span=50).mean()
-    df['ema200'] = df['close'].ewm(span=200).mean()
-    latest = df.iloc[-1]
-    prev = df.iloc[-2]
-    signals = []
-    if prev['ema50'] < prev['ema200'] and latest['ema50'] > latest['ema200']:
-        signals.append("EMA50/200 Golden Cross")
-    elif prev['ema50'] > prev['ema200'] and latest['ema50'] < latest['ema200']:
-        signals.append("EMA50/200 Death Cross")
-    if latest['close'] > latest['ema50'] > latest['ema200']:
-        signals.append("Strong Bullish Alignment")
-    elif latest['close'] < latest['ema50'] < latest['ema200']:
-        signals.append("Strong Bearish Alignment")
-    return "\n".join(signals) if signals else "Neutral"
+    return " • ".join(alerts) if alerts else "No Active Alerts"
 
-# -----------------------------
-# Clickable News Cards
-# -----------------------------
-def send_news_embeds():
-    try:
-        url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=XRP,BTC,SEC"
-        resp = requests.get(url, timeout=10)
-        articles = resp.json()["Data"][:5]
-        webhook = DiscordWebhook(url=DISCORD_WEBHOOK)
-        for a in articles:
-            title = a['title']
-            body = a['body'][:200] + "..." if len(a['body']) > 200 else a['body']
-            link = a['url']
-            image = a.get('imageurl', '')
-            embed = DiscordEmbed(title=title, description=body, color=0x9b59b6, url=link)
-            if image:
-                embed.set_image(url=image)
-            embed.set_footer(text="Click title to read full article")
-            embed.timestamp = datetime.utcfromtimestamp(a['published_on']).isoformat()
-            webhook.add_embed(embed)
-        if webhook.embeds:
-            webhook.execute()
-            print("News embeds sent!")
-    except Exception as e:
-        print("News failed:", e)
+# =============================
+# Send Report + News + X
+# =============================
+def send_report(daily_struct, h4_struct, alerts):
+    price = df_4h['close'].iloc[-1]
+    change_24h = (price / df_4h['close'].iloc[-6] - 1) * 100 if len(df_4h) >= 6 else 0
 
-# -----------------------------
-# MAX-INFO X POST (250 chars) — FIXED
-# -----------------------------
-def post_to_x(structure, alerts, patterns):
-    try:
-        price = df['close'].iloc[-1]
-        change_24h = ((price / df['close'].iloc[-25]) - 1) * 100 if len(df) > 25 else 0
-        change_7d = ((price / df['close'].iloc[-169]) - 1) * 100 if len(df) > 169 else 0
-        vol = "VOL↑" if df['volume'].iloc[-1] > df['volume'].tail(50).mean() * 2 else "Vol"
-        rsi = int(100 - (100 / (1 + (df['close'].diff(1).clip(lower=0).rolling(14).mean() /
-                                    abs(df['close'].diff(1)).rolling(14).mean()))).iloc[-1])
-        rsi_tag = f" RSI{rsi}" if rsi > 70 or rsi < 30 else ""
-        macd = "MACD↑" if "Bullish Crossover" in alerts else "MACD↓" if "Bearish Crossover" in alerts else ""
-
-        tweet = f"""XRP Intel Drop
-${price:.4f} | 24h: {change_24h:+.2f}% | 7d: {change_7d:+.2f}%
-{structure}
-{vol} {macd}{rsi_tag} {patterns.split()[0] if "Neutral" not in patterns else "Neutral"}
-#XRP #Crypto"""
-
-        client.create_tweet(text=tweet)
-        print(f"X post sent! ({len(tweet)} chars)")
-    except Exception as e:
-        print("X post failed:", e)
-
-# -----------------------------
-# Your Original Beautiful Embed + News + X Post
-# -----------------------------
-def send_main_report(structure, alerts, patterns):
-    price = df['close'].iloc[-1]
-    change_24h = ((price / df['close'].iloc[-25]) - 1) * 100 if len(df) > 25 else 0
-
-    embed = DiscordEmbed(title="Combined XRP Intelligence Report", color=0x9b59b6)
-    embed.add_embed_field(name="**Market Structure**", value=structure, inline=False)
-    embed.add_embed_field(name="**Current Price**", value=f"${price:.4f}", inline=True)
-    embed.add_embed_field(name="**24h Change**", value=f"{change_24h:+.2f}%", inline=True)
-    embed.add_embed_field(name="**MACD / RSI / Volume**", value=alerts or "No Alerts", inline=False)
-    embed.add_embed_field(name="**Patterns & Flips**", value=patterns or "Neutral", inline=False)
-    embed.add_embed_field(name="**Flips / Triggers**", value="Strong Bullish Flip | Auto-post via GitHub Actions", inline=False)
-    embed.add_embed_field(name="**Caution Level**", value="Strong Caution (24h High/Low)", inline=False)
+    # Discord Embed
+    embed = DiscordEmbed(title="XRP Intelligence Report", color=0x9b59b6)
+    embed.add_embed_field(name="Market Structure", 
+                         value=f"**Daily:** {daily_struct}\n**4-Hour:** {h4_struct}", inline=False)
+    embed.add_embed_field(name="Price", value=f"${price:.4f}", inline=True)
+    embed.add_embed_field(name="24h Change", value=f"{change_24h:+.2f}%", inline=True)
+    embed.add_embed_field(name="Alerts", value=alerts, inline=False)
     embed.set_thumbnail(url="https://cryptologos.cc/logos/xrp-xrp-logo.png")
-    embed.set_footer(text=f"Data: {len(df)} hourly candles • Updated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    embed.set_footer(text=f"Updated {datetime.now().strftime('%Y-%m-%d %I:%M %p EST')} | 4× Daily Report")
     embed.timestamp = datetime.utcnow().isoformat()
 
     webhook = DiscordWebhook(url=DISCORD_WEBHOOK)
@@ -196,27 +117,57 @@ def send_main_report(structure, alerts, patterns):
     webhook.execute()
     print("Main report sent!")
 
-    send_news_embeds()
-    post_to_x(structure, alerts, patterns)
+    # News Cards
+    try:
+        news = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=XRP,BTC,SEC", timeout=10).json()["Data"][:5]
+        news_hook = DiscordWebhook(url=DISCORD_WEBHOOK)
+        for a in news:
+            e = DiscordEmbed(title=a['title'][:250], description=a['body'][:190]+"...", color=0x9b59b6, url=a['url'])
+            if a.get('imageurl'): e.set_image(url=a['imageurl'])
+            e.set_footer(text="Click title for full article")
+            news_hook.add_embed(e)
+        news_hook.execute()
+        print("News cards sent!")
+    except Exception as e:
+        print("News failed:", e)
 
-# -----------------------------
+    # X Post
+    try:
+        tweet = f"""XRP Update
+${price:.4f} ({change_24h:+.2f}%)
+Daily: {daily_struct}
+4H: {h4_struct}
+{alerts}
+#XRP #Crypto"""
+        client.create_tweet(text=tweet)
+        print(f"X posted ({len(tweet)} chars)")
+    except Exception as e:
+        print("X post failed:", e)
+
+# =============================
 # Main
-# -----------------------------
+# =============================
 def main():
-    global df
-    new = fetch_xrp_hourly_data()
-    if new.empty: return
-    old = load_csv()
-    df = pd.concat([old, new]).drop_duplicates(subset="open_time").reset_index(drop=True)
-    df.to_csv(CSV_FILE, index=False)
-    print(f"Saved CSV — {len(df)} rows")
+    global df_4h, df_daily
+    hourly, df_4h, df_daily = fetch_data()
 
-    structure = compute_market_structure(df)
-    alerts = check_macd_rsi_alerts(df)
-    patterns = detect_chart_patterns(df)
+    # Save CSV
+    hourly_reset = hourly.reset_index().rename(columns={"time": "open_time"})
+    try:
+        old = pd.read_csv(CSV_FILE)
+        old["open_time"] = pd.to_datetime(old["open_time"])
+        combined = pd.concat([old, hourly_reset]).drop_duplicates("open_time")
+    except:
+        combined = hourly_reset
+    combined.to_csv(CSV_FILE, index=False)
+    print(f"CSV saved — {len(combined)} rows")
 
-    print("Market Structure:", structure)
-    send_main_report(structure, alerts, patterns)
+    daily_struct = market_structure(df_daily, "Daily")
+    h4_struct = market_structure(df_4h, "4H")
+    alerts = get_alerts(df_4h)
+
+    print(f"Daily: {daily_struct} | 4H: {h4_struct} | Alerts: {alerts}")
+    send_report(daily_struct, h4_struct, alerts)
 
 if __name__ == "__main__":
     main()
