@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ULTIMATE 7-COIN EMPIRE — FINAL VERSION (works with your current secrets)
-XRP uses your old DISCORD_WEBHOOK · Others use the new ones you just added
+ULTIMATE 7-COIN EMPIRE — FINAL WORKING VERSION
+All secrets visible · XRP fallback to old name · Zero skips
 """
 
 import requests
@@ -12,25 +12,26 @@ import pytz
 from discord_webhook import DiscordWebhook, DiscordEmbed
 import tweepy
 
-# =============================
-# TIME
-# =============================
 eastern = pytz.timezone('America/New_York')
 
-# =============================
-# WEBHOOKS — BACKWARD COMPATIBLE + FUTURE-PROOF
-# =============================
+# DIRECT ACCESS — THIS IS THE FIX
+def get_secret(name, fallback=None):
+    """Get secret — falls back to old DISCORD_WEBHOOK only for XRP"""
+    if name == "DISCORD_WEBHOOK_XRP" and name not in os.environ:
+        return os.environ.get("DISCORD_WEBHOOK")  # your old one
+    return os.environ[name]  # all others must exist
+
 WEBHOOKS = {
-    "XRP":  os.environ.get("DISCORD_WEBHOOK_XRP") or os.environ["DISCORD_WEBHOOK"],  # ← works with both!
-    "BTC":  os.environ.get("DISCORD_WEBHOOK_BTC"),
-    "ADA":  os.environ.get("DISCORD_WEBHOOK_ADA"),
-    "ZEC":  os.environ.get("DISCORD_WEBHOOK_ZEC"),
-    "HBAR": os.environ.get("DISCORD_WEBHOOK_HBAR"),
-    "ETH":  os.environ.get("DISCORD_WEBHOOK_ETH"),
-    "SOL":  os.environ.get("DISCORD_WEBHOOK_SOL"),
+    "XRP":  get_secret("DISCORD_WEBHOOK_XRP"),
+    "BTC":  get_secret("DISCORD_WEBHOOK_BTC"),
+    "ADA":  get_secret("DISCORD_WEBHOOK_ADA"),
+    "ZEC":  get_secret("DISCORD_WEBHOOK_ZEC"),
+    "HBAR": get_secret("DISCORD_WEBHOOK_HBAR"),
+    "ETH":  get_secret("DISCORD_WEBHOOK_ETH"),
+    "SOL":  get_secret("DISCORD_WEBHOOK_SOL"),
 }
 
-# Coin styling
+# Rest of your perfect config
 COINS = {
     "XRP":  {"color": 0x9b59b6, "thumb": "https://cryptologos.cc/logos/xrp-xrp-logo.png",       "symbol": "XRP"},
     "BTC":  {"color": 0xf7931a, "thumb": "https://cryptologos.cc/logos/bitcoin-btc-logo.png",   "symbol": "BTC"},
@@ -49,9 +50,6 @@ client = tweepy.Client(
     access_token_secret=os.environ["X_ACCESS_SECRET"]
 )
 
-# =============================
-# Fetch Data
-# =============================
 def fetch_data(coin):
     url = "https://min-api.cryptocompare.com/data/v2/histohour"
     resp = requests.get(url, params={"fsym": coin, "tsym": "USDT", "limit": 2000}, timeout=30)
@@ -63,14 +61,11 @@ def fetch_data(coin):
     df_daily = hourly.resample('1D').agg({'open':'first','high':'max','low':'min','close':'last'}).dropna()
     return df_4h, df_daily
 
-# =============================
-# Indicators (exactly like your original perfect version)
-# =============================
 def market_structure(df, timeframe):
     try:
         window = 10 if timeframe == "Daily" else 15
-        highs = df['high'][df['high'] == df['high'].rolling(2*window+1, center=True).max()].dropna().tail(4)
-        lows  = df['low'][df['low']   == df['low'].rolling(2*window+1, center=True).min()].dropna().tail(4)
+        highs = df['high'][df['high'] == df['high'].rolling(2*window+1, center=True).max()].tail(4)
+        lows  = df['low'][df['low']   == df['low'].rolling(2*window+1, center=True).min()].tail(4)
         if len(highs) < 3 or len(lows) < 3: return "Ranging/Choppy"
         hh_hl = highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3] and lows.iloc[-1] > lows.iloc[-2] > lows.iloc[-3]
         lh_ll = highs.iloc[-1] < highs.iloc[-2] < highs.iloc[-3] and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]
@@ -93,18 +88,13 @@ def bollinger_analysis(df_4h):
     breakout = ("BULLISH BREAKOUT" if prev['close'] <= prev['upper'] and latest['close'] > latest['upper']
                else "BEARISH BREAKOUT" if prev['close'] >= prev['lower'] and latest['close'] < latest['lower'] else "")
 
-    return {
-        "upper": latest['upper'], "mid": latest['mid'], "lower": latest['lower'],
-        "dist_pct": latest['pct_b'], "squeeze": squeeze, "breakout": breakout
-    }
+    return {"upper": latest['upper'], "mid": latest['mid'], "lower": latest['lower'],
+            "dist_pct": latest['pct_b'], "squeeze": squeeze, "breakout": breakout}
 
-# =============================
-# SEND REPORT
-# =============================
 def send_report(coin):
-    # Skip if webhook missing (except XRP which has fallback)
-    if coin != "XRP" and not WEBHOOKS[coin]:
-        print(f"{coin} webhook missing — skipping")
+    webhook_url = WEBHOOKS[coin]
+    if not webhook_url:
+        print(f"{coin} webhook missing")
         return
 
     df_4h, df_daily = fetch_data(coin)
@@ -132,9 +122,7 @@ def send_report(coin):
     embed.set_footer(text=f"Updated {now_est} | 4× Daily Report")
     embed.timestamp = datetime.utcnow().isoformat()
 
-    webhook = DiscordWebhook(url=WEBHOOKS[coin])
-    webhook.add_embed(embed)
-    webhook.execute()
+    DiscordWebhook(url=webhook_url).add_embed(embed).execute()
     print(f"{coin} → Sent")
 
     if coin == "XRP":
@@ -150,15 +138,12 @@ Price {bb['dist_pct']:.0f}% from lower band | RSI {rsi}
         except Exception as e:
             print("Tweet failed:", e)
 
-# =============================
-# MAIN
-# =============================
 def main():
     for coin in ["XRP", "BTC", "ADA", "ZEC", "HBAR", "ETH", "SOL"]:
         try:
             send_report(coin)
         except Exception as e:
-            print(f"{coin} crashed:", e)
+            print(f"{coin} failed:", e)
 
 if __name__ == "__main__":
     main()
