@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-XRP AI BOT — FINAL PERFECTION (2025)
-+ RSI MEAN REVERSION (4H) — TRADINGVIEW MATCHED
+XRP AI BOT — FINAL PERFECTION (2025) + 7-COIN EMPIRE WITH PER-COIN NEWS
++ BULLISH PROBABILITY INDICATOR IS BACK BABY
++ 4H RSI Mean Reversion Signal (XRP, BTC, ETH only)
 """
 
 import requests
@@ -13,7 +14,8 @@ from discord_webhook import DiscordWebhook, DiscordEmbed
 import tweepy
 
 CSV_FILE = "xrp_history.csv"
-eastern = pytz.timezone("America/New_York")
+
+eastern = pytz.timezone('America/New_York')
 
 client = tweepy.Client(
     bearer_token=os.environ["X_BEARER_TOKEN"],
@@ -23,6 +25,7 @@ client = tweepy.Client(
     access_token_secret=os.environ["X_ACCESS_SECRET"]
 )
 
+# ==================== 7 COINS CONFIG ====================
 COINS = {
     "XRP":  {"color": 0x9b59b6, "thumb": "https://cryptologos.cc/logos/xrp-xrp-logo.png"},
     "BTC":  {"color": 0xf7931a, "thumb": "https://cryptologos.cc/logos/bitcoin-btc-logo.png"},
@@ -32,142 +35,227 @@ COINS = {
     "ETH":  {"color": 0x627eea, "thumb": "https://cryptologos.cc/logos/ethereum-eth-logo.png"},
     "SOL":  {"color": 0x14f195, "thumb": "https://cryptologos.cc/logos/solana-sol-logo.png"},
 }
+# =======================================================
 
-# ================= DATA =================
 def fetch_data(coin):
     url = "https://min-api.cryptocompare.com/data/v2/histohour"
-    r = requests.get(url, params={"fsym": coin, "tsym": "USDT", "limit": 2000}, timeout=20)
-    data = r.json()["Data"]["Data"]
-    df = pd.DataFrame(data)
+    resp = requests.get(url, params={"fsym": coin, "tsym": "USDT", "limit": 2000}, timeout=20)
+    data = resp.json()["Data"]["Data"]
+    df = pd.DataFrame([d for d in data if d["time"] > 0])
     df["time"] = pd.to_datetime(df["time"], unit="s")
-    df = df.rename(columns={"volumeto": "volume"}).set_index("time")
-    hourly = df[["open", "high", "low", "close", "volume"]]
+    df.rename(columns={"volumeto": "volume"}, inplace=True)
 
-    df_4h = hourly.resample("4H").agg({
-        "open": "first", "high": "max",
-        "low": "min", "close": "last",
-        "volume": "sum"
-    }).dropna()
-
-    df_daily = hourly.resample("1D").agg({
-        "open": "first", "high": "max",
-        "low": "min", "close": "last",
-        "volume": "sum"
-    }).dropna()
+    hourly = df[["time", "open", "high", "low", "close", "volume"]].set_index("time")
+    df_4h = hourly.resample('4h').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna()
+    df_daily = hourly.resample('1D').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna()
 
     return hourly, df_4h, df_daily
 
-# ================= STRUCTURE =================
 def market_structure(df, timeframe):
     try:
-        window = 10 if timeframe == "Daily" else 10  # ✅ micro 4H speed improvement
-        high_roll = df["high"].rolling(2 * window + 1, center=True).max()
-        low_roll = df["low"].rolling(2 * window + 1, center=True).min()
-        highs = df["high"][df["high"] == high_roll].dropna().tail(4)
-        lows = df["low"][df["low"] == low_roll].dropna().tail(4)
-
+        window = 10 if timeframe == "Daily" else 15
+        high_roll = df['high'].rolling(2*window+1, center=True).max()
+        low_roll = df['low'].rolling(2*window+1, center=True).min()
+        highs = df['high'][df['high'] == high_roll].dropna().tail(4)
+        lows = df['low'][df['low'] == low_roll].dropna().tail(4)
         if len(highs) < 3 or len(lows) < 3:
             return "Ranging/Choppy"
-
-        if highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3] and lows.iloc[-1] > lows.iloc[-2] > lows.iloc[-3]:
-            return "Bullish (HH+HL)"
-        if highs.iloc[-1] < highs.iloc[-2] < highs.iloc[-3] and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
-            return "Bearish (LH+LL)"
+        hh_hl = (highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3] and lows.iloc[-1] > lows.iloc[-2] > lows.iloc[-3])
+        lh_ll = (highs.iloc[-1] < highs.iloc[-2] < highs.iloc[-3] and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3])
+        if hh_hl: return "Bullish (HH+HL)"
+        if lh_ll: return "Bearish (LH+LL)"
         return "Ranging/Choppy"
     except:
         return "Unavailable"
 
-# ================= BB =================
-def bollinger_analysis(df):
-    mid = df["close"].rolling(20).mean()
-    std = df["close"].rolling(20).std()
-    upper = mid + std * 2
-    lower = mid - std * 2
+def bollinger_analysis(df_4h):
+    df = df_4h.copy()
+    df['mid'] = df['close'].rolling(20).mean()
+    df['std'] = df['close'].rolling(20).std()
+    df['upper'] = df['mid'] + (df['std'] * 2)
+    df['lower'] = df['mid'] - (df['std'] * 2)
+    df['bandwidth'] = (df['upper'] - df['lower']) / df['mid']
+    df['distance_from_lower'] = (df['close'] - df['lower']) / (df['upper'] - df['lower'])
 
-    bandwidth = (upper - lower) / mid
-    dist = (df["close"] - lower) / (upper - lower) * 100
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    squeeze = bandwidth.iloc[-1] < bandwidth.rolling(100).quantile(0.1).iloc[-1]
-    breakout = ""
-    if df["close"].iloc[-2] <= upper.iloc[-2] and df["close"].iloc[-1] > upper.iloc[-1]:
-        breakout = "BULLISH BREAKOUT"
-    elif df["close"].iloc[-2] >= lower.iloc[-2] and df["close"].iloc[-1] < lower.iloc[-1]:
-        breakout = "BEARISH BREAKOUT"
+    dist_pct = latest['distance_from_lower'] * 100
+    current_bandwidth = latest['bandwidth']
+    squeeze_threshold = df['bandwidth'].rolling(100).quantile(0.1).iloc[-1]
+    squeeze = "SQUEEZE ACTIVE" if pd.notna(squeeze_threshold) and current_bandwidth < squeeze_threshold else "No Squeeze"
+
+    breakout_dir = ""
+    if prev['close'] <= prev['upper'] and latest['close'] > latest['upper']:
+        breakout_dir = "BULLISH BREAKOUT"
+    elif prev['close'] >= prev['lower'] and latest['close'] < latest['lower']:
+        breakout_dir = "BEARISH BREAKOUT"
 
     return {
-        "upper": upper.iloc[-1],
-        "mid": mid.iloc[-1],
-        "lower": lower.iloc[-1],
-        "dist_pct": dist.iloc[-1],
-        "squeeze": "SQUEEZE ACTIVE" if squeeze else "No Squeeze",
-        "breakout": breakout
+        'upper': latest['upper'], 'lower': latest['lower'], 'mid': latest['mid'],
+        'dist_pct': dist_pct, 'squeeze': squeeze, 'breakout': breakout_dir
     }
 
-# ================= PROBABILITY =================
+# BULLISH PROBABILITY CALCULATION
 def calculate_bullish_probability(bb, rsi, daily_struct, h4_struct):
-    score = 50
-    score += (bb["dist_pct"] - 50) * 0.6
-    score += (rsi - 50) * 0.3
+    score = 50  # neutral base
 
-    if "Bullish" in daily_struct: score += 20
-    if "Bearish" in daily_struct: score -= 20
-    if "Bullish" in h4_struct: score += 15
-    if "Bearish" in h4_struct: score -= 15
-    if bb["squeeze"] == "SQUEEZE ACTIVE": score += 12
-    if "BULLISH" in bb["breakout"]: score += 18
-    if "BEARISH" in bb["breakout"]: score -= 18
+    # BB position (strongest weight)
+    score += (bb['dist_pct'] - 50) * 0.6
 
-    return max(5, min(95, round(score)))
+    # RSI
+    if rsi < 30:
+        score -= 15
+    elif rsi > 70:
+        score += 15
+    else:
+        score += (rsi - 50) * 0.3
 
-# ================= MAIN =================
+    # Market Structure
+    if "Bullish" in daily_struct:
+        score += 20
+    elif "Bearish" in daily_struct:
+        score -= 20
+
+    if "Bullish" in h4_struct:
+        score += 15
+    elif "Bearish" in h4_struct:
+        score -= 15
+
+    # Squeeze + Breakout bonus
+    if bb['squeeze'] == "SQUEEZE ACTIVE":
+        score += 12
+    if "BULLISH BREAKOUT" in bb['breakout']:
+        score += 18
+    elif "BEARISH BREAKOUT" in bb['breakout']:
+        score -= 18
+
+    probability = max(5, min(95, round(score)))  # clamp 5–95%
+    return probability
+
 def send_report(coin):
     webhook_url = os.environ.get(f"DISCORD_WEBHOOK_{coin}")
     if not webhook_url:
+        print(f"{coin} → No webhook, skipping")
         return
 
-    hourly, df_4h, df_daily = fetch_data(coin)
-    price = df_4h["close"].iloc[-1]
-    now = datetime.now(eastern).strftime("%I:%M %p EST")
+    try:
+        hourly, df_4h, df_daily = fetch_data(coin)
 
-    rsi_series = df_4h["close"].pct_change()
-    rsi = int(100 - (100 / (1 + (
-        rsi_series.clip(lower=0).rolling(14).mean() /
-        abs(rsi_series).rolling(14).mean()
-    ))).iloc[-1])
+        # Save XRP history only
+        if coin == "XRP":
+            hourly_reset = hourly.reset_index().rename(columns={"time": "open_time"})
+            try:
+                old = pd.read_csv(CSV_FILE)
+                old["open_time"] = pd.to_datetime(old["open_time"])
+                combined = pd.concat([old, hourly_reset]).drop_duplicates("open_time")
+            except:
+                combined = hourly_reset
+            combined.to_csv(CSV_FILE, index=False)
 
-    prev_rsi = int(100 - (100 / (1 + (
-        rsi_series.clip(lower=0).rolling(14).mean().shift(1) /
-        abs(rsi_series).rolling(14).mean().shift(1)
-    ))).iloc[-2])
+        price = df_4h['close'].iloc[-1]
+        change_24h = (price / df_4h['close'].iloc[-6] - 1) * 100 if len(df_4h) >= 6 else 0
+        now_est = datetime.now(eastern).strftime("%I:%M %p EST")
+        bb = bollinger_analysis(df_4h)
 
-    # ✅ RSI MEAN REVERSION — MATCHES PINE SCRIPT
-    if prev_rsi > 30 and rsi < 30:
-        rsi_signal = "📈 **BUY** — RSI crossed UNDER 30"
-    elif prev_rsi < 50 and rsi > 50:
-        rsi_signal = "📉 **SELL** — RSI crossed ABOVE 50"
-    else:
-        rsi_signal = "⚪ No signal this candle"
+        daily_struct = market_structure(df_daily, "Daily")
+        h4_struct = market_structure(df_4h, "4H")
 
-    bb = bollinger_analysis(df_4h)
-    daily_struct = market_structure(df_daily, "Daily")
-    h4_struct = market_structure(df_4h, "4H")
-    bullish_prob = calculate_bullish_probability(bb, rsi, daily_struct, h4_struct)
+        # RSI Mean Reversion Signal (only XRP, BTC, ETH)
+        rsi_field = None
+        if coin in ["XRP", "BTC", "ETH"]:
+            rsi_period = 14
+            oversold = 30
+            exit_level = 50
 
-    embed = DiscordEmbed(title=f"{coin} Market Report", color=COINS[coin]["color"])
-    embed.add_embed_field(name="**Bullish Probability**", value=f"{bullish_prob}%", inline=False)
-    embed.add_embed_field(name="**RSI Mean Reversion (4H)**", value=rsi_signal, inline=False)
-    embed.add_embed_field(name="**Market Structure**", value=f"Daily: {daily_struct}\n4H: {h4_struct}", inline=False)
-    embed.add_embed_field(name="**Price**", value=f"${price:.4f}", inline=True)
-    embed.add_embed_field(name="**RSI (14)**", value=str(rsi), inline=True)
-    embed.add_embed_field(name="**BB Status**", value=f"{bb['squeeze']} {bb['breakout']}", inline=True)
-    embed.set_thumbnail(url=COINS[coin]["thumb"])
-    embed.set_footer(text=f"Updated {now}")
+            rsi = int(100 - (100 / (1 + (
+                df_4h['close'].pct_change().clip(lower=0).rolling(rsi_period).mean() /
+                abs(df_4h['close'].pct_change()).rolling(rsi_period).mean()
+            ).replace([0, float('inf')], 1)).iloc[-1]))
 
-    webhook = DiscordWebhook(url=webhook_url)
-    webhook.add_embed(embed)
-    webhook.execute()
+            rsi_signal = "HOLD"
+            if rsi < oversold:
+                rsi_signal = "BUY"
+            elif rsi > exit_level:
+                rsi_signal = "EXIT"
 
-# ================= RUN =================
+            rsi_field = f"{rsi} → {rsi_signal}"
+
+        # BULLISH PROBABILITY
+        bullish_prob = calculate_bullish_probability(bb, rsi if rsi_field else 50, daily_struct, h4_struct)
+
+        # MAIN REPORT
+        embed = DiscordEmbed(title=f"{coin} Market Report", color=COINS[coin]["color"])
+        embed.add_embed_field(
+            name="**Bullish Probability**",
+            value=f"**{bullish_prob}%**",
+            inline=False
+        )
+
+        embed.add_embed_field(name="**Market Structure**", value=f"**Daily:** {daily_struct}\n**4-Hour:** {h4_struct}", inline=False)
+        embed.add_embed_field(name="**Current Price**", value=f"${price:.4f}", inline=True)
+        embed.add_embed_field(name="**24h Change**", value=f"{change_24h:+.2f}%", inline=True)
+        embed.add_embed_field(name="**Bollinger Bands (20,2)**", value=f"Upper: ${bb['upper']:.4f}\nMid: ${bb['mid']:.4f}\nLower: ${bb['lower']:.4f}", inline=True)
+        embed.add_embed_field(name="**BB Position**", value=f"{bb['dist_pct']:.1f}% from lower", inline=True)
+        embed.add_embed_field(name="**BB Status**", value=f"{bb['squeeze']}\n{bb['breakout']}", inline=True)
+
+        # Add RSI field if applicable
+        if rsi_field:
+            embed.add_embed_field(name=f"RSI (14) (4H)", value=rsi_field, inline=True)
+
+        embed.set_thumbnail(url=COINS[coin]["thumb"])
+        embed.set_footer(text=f"Updated {now_est} | 4× Daily Report")
+        embed.timestamp = datetime.utcnow().isoformat()
+
+        webhook = DiscordWebhook(url=webhook_url)
+        webhook.add_embed(embed)
+        webhook.execute()
+        print(f"{coin} → Report sent! (Bullish Probability: {bullish_prob}%)")
+
+        # PER-COIN NEWS
+        try:
+            news_resp = requests.get(
+                f"https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories={coin}",
+                timeout=10
+            ).json()
+            articles = news_resp.get("Data", [])[:4]
+
+            if articles:
+                news_hook = DiscordWebhook(url=webhook_url)
+                news_hook.set_content(f"**Latest {coin} News**")
+                for a in articles:
+                    e = DiscordEmbed(
+                        title=a['title'][:256],
+                        description=(a['body'][:390] + "...") if len(a['body']) > 390 else a['body'],
+                        color=COINS[coin]["color"],
+                        url=a['url']
+                    )
+                    if a.get('imageurl'):
+                        e.set_image(url=a['imageurl'])
+                    e.set_footer(text="Click title → full article")
+                    e.timestamp = datetime.utcfromtimestamp(a['published_on']).isoformat()
+                    news_hook.add_embed(e)
+                news_hook.execute()
+                print(f"{coin} → News delivered!")
+        except Exception as e:
+            print(f"{coin} news failed: {e}")
+
+        # TWEET ONLY XRP (unchanged)
+        if coin == "XRP":
+            tweet = f"""{coin} • {now_est}
+${price:.4f} ({change_24h:+.2f}%)
+Bullish Probability: {bullish_prob}%
+Daily: {daily_struct} | 4H: {h4_struct}
+BB: {bb['squeeze']} {bb['breakout']}
+Price {bb['dist_pct']:.0f}% from lower band | RSI {rsi_field if rsi_field else 'N/A'}
+#XRP #Crypto"""
+            client.create_tweet(text=tweet)
+            print("XRP → Tweeted with Bullish Probability!")
+
+    except Exception as e:
+        print(f"{coin} failed: {e}")
+
+# ============================= MAIN =============================
 if __name__ == "__main__":
-    for c in COINS:
-        send_report(c)
+    for coin in ["XRP", "BTC", "ADA", "ZEC", "HBAR", "ETH", "SOL"]:
+        send_report(coin)
